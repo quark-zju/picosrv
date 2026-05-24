@@ -7,7 +7,7 @@
 ### 1. 配置策略
 
 ```bash
-make configure-custom
+make config
 ```
 
 首次执行会先从 `examples/custom_local.go.example` 复制到 `internal/config/custom_local.go`，然后用 `EDITOR`（默认 `vim`）打开编辑。修改 `hostConfigs` 中的域名配置。每个 Host 可选择：

@@ -13,7 +13,7 @@ CUSTOM_POLICY := internal/config/custom_local.go
 CUSTOM_POLICY_EXAMPLE := examples/custom_local.go.example
 SUDO ?= sudo
 
-.PHONY: build test install install-systemd setup-user configure-custom deploy
+.PHONY: build test install install-systemd setup-user config deploy
 
 build:
 	go build -o $(BUILD_OUTPUT) $(BUILD_TARGET)
@@ -38,7 +38,7 @@ setup-user:
 		$(SUDO) useradd --system --gid $(SERVICE_GROUP) --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin $(SERVICE_USER); \
 	fi
 
-configure-custom:
+config:
 	if [ ! -f $(CUSTOM_POLICY) ]; then \
 		cp $(CUSTOM_POLICY_EXAMPLE) $(CUSTOM_POLICY); \
 	fi
