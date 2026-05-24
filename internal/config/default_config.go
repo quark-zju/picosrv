@@ -7,6 +7,10 @@ import (
 
 type defaultEvaluator struct{}
 
+var defaultHostUpstreams = map[string]string{
+	"example.local": "http://127.0.0.1:8081",
+}
+
 func NewEvaluator() Evaluator {
 	if evaluatorFactory != nil {
 		return evaluatorFactory()
@@ -16,13 +20,13 @@ func NewEvaluator() Evaluator {
 
 func (defaultEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie bool) Decision {
 	if hasValidCookie {
-		if upstream, ok := defaultHostUpstreams()[ctx.Host]; ok {
+		if upstream, ok := defaultHostUpstreams[ctx.Host]; ok {
 			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "cookie"}
 		}
 		return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
 	}
 
-	if upstream, ok := defaultHostUpstreams()[ctx.Host]; ok {
+	if upstream, ok := defaultHostUpstreams[ctx.Host]; ok {
 		if strings.HasPrefix(ctx.Path, "/public") {
 			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "public_path"}
 		}
@@ -39,10 +43,4 @@ func (defaultEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie bo
 	}
 
 	return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
-}
-
-func defaultHostUpstreams() map[string]string {
-	return map[string]string{
-		"example.local": "http://127.0.0.1:8081",
-	}
 }
