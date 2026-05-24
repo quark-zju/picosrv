@@ -50,38 +50,46 @@ sudo adduser \
 sudo apt-get install acl
 ```
 
-给服务账号开放证书目录的穿越权限，以及目标域名证书的只读权限。先处理顶层目录（无需递归）：
+准备证书目录：
 
 ```bash
-sudo setfacl -m u:picosrv:rx /etc/letsencrypt/live
-sudo setfacl -m u:picosrv:rx /etc/letsencrypt/archive
+sudo install -d -m 755 /etc/picosrv/certs
 ```
 
-然后按域名授权：
+如果使用 `acme.sh`，可以把证书安装到 `picosrv` 自己的目录：
 
 ```bash
 DOMAIN=example.com
-sudo setfacl -m u:picosrv:rx /etc/letsencrypt/live/$DOMAIN
-sudo setfacl -m u:picosrv:rx /etc/letsencrypt/archive/$DOMAIN
-sudo setfacl -m u:picosrv:r /etc/letsencrypt/archive/$DOMAIN/fullchain1.pem
-sudo setfacl -m u:picosrv:r /etc/letsencrypt/archive/$DOMAIN/privkey1.pem
+sudo install -d -m 755 /etc/picosrv/certs/$DOMAIN
+acme.sh --install-cert -d "$DOMAIN" \
+  --key-file /etc/picosrv/certs/$DOMAIN/privkey.pem \
+  --fullchain-file /etc/picosrv/certs/$DOMAIN/fullchain.pem \
+  --reloadcmd "systemctl restart picosrv"
 ```
 
-`live/<domain>/fullchain.pem` 和 `privkey.pem` 通常是指向 `archive/` 的符号链接，实际读取权限以 `archive/` 下的目录和文件 ACL 为准。
+给服务账号开放证书目录的穿越权限，以及目标域名证书的只读权限：
+
+```bash
+DOMAIN=example.com
+sudo setfacl -m u:picosrv:rx /etc/picosrv/certs
+sudo setfacl -m u:picosrv:rx /etc/picosrv/certs/$DOMAIN
+sudo setfacl -m u:picosrv:r /etc/picosrv/certs/$DOMAIN/fullchain.pem
+sudo setfacl -m u:picosrv:r /etc/picosrv/certs/$DOMAIN/privkey.pem
+```
 
 确认 `picosrv` 用户确实能读取证书：
 
 ```bash
 DOMAIN=example.com
-sudo -u picosrv test -r /etc/letsencrypt/live/$DOMAIN/fullchain.pem
-sudo -u picosrv test -r /etc/letsencrypt/live/$DOMAIN/privkey.pem
+sudo -u picosrv test -r /etc/picosrv/certs/$DOMAIN/fullchain.pem
+sudo -u picosrv test -r /etc/picosrv/certs/$DOMAIN/privkey.pem
 ```
 
 两条命令都返回退出码 `0` 即表示可读；也可以用 `getfacl` 查看当前 ACL：
 
 ```bash
-getfacl /etc/letsencrypt/live /etc/letsencrypt/archive
-getfacl /etc/letsencrypt/archive/$DOMAIN
+getfacl /etc/picosrv/certs
+getfacl /etc/picosrv/certs/$DOMAIN
 ```
 
 #### 3.4 安装并启动服务
@@ -120,7 +128,7 @@ journalctl -u picosrv.service -f
 
 ## 补充说明
 
-- **运行参数**：`--hmac-secret`（必填）、`--cert-dir`（可选，如 `/etc/letsencrypt/live`）、`--tls-reload-interval`（默认 `30s`）。对应环境变量 `PICOSRV_HMAC_SECRET`、`PICOSRV_CERT_DIR`、`PICOSRV_TLS_RELOAD_INTERVAL`。
+- **运行参数**：`--hmac-secret`（必填）、`--cert-dir`（可选，如 `/etc/picosrv/certs`）、`--tls-reload-interval`（默认 `30s`）。对应环境变量 `PICOSRV_HMAC_SECRET`、`PICOSRV_CERT_DIR`、`PICOSRV_TLS_RELOAD_INTERVAL`。
 - **证书查找**：根据 TLS SNI 取顶级域名（最后两段），从 `<cert-dir>/<domain>/fullchain.pem` 和 `<domain>/privkey.pem` 加载。按需加载，定时重载仅检查已使用过的域名。
 - **监听端口**：默认仅 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加 `ListenStream=80` 的 socket 文件。UDS 示例见 `deploy/systemd/picosrv-uds.socket`。
 - **策略接口**：输入 `host/path/ua/query/cookie`，输出 `DecisionAllowProxy` / `DecisionAllowFiles` / `DecisionIssueCookieAndRedirect` / `DecisionDeny`。默认策略（`internal/config/default_config.go`）仅作示例，生产必须用 `custom_local.go`。
