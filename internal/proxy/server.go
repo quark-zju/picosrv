@@ -30,12 +30,13 @@ const cookieName = "picosrv_knock"
 const knockCookieTTL = 2 * 365 * 24 * time.Hour
 
 type Options struct {
-	Evaluator         config.Evaluator
-	HMACSecret        string
-	CertDir           string
-	TLSReloadInterval time.Duration
-	Logger            *slog.Logger
-	ProxyTransport    *http.Transport
+	Evaluator                  config.Evaluator
+	HMACSecret                 string
+	CertDir                    string
+	TLSReloadInterval          time.Duration
+	ProxyResponseHeaderTimeout time.Duration
+	Logger                     *slog.Logger
+	ProxyTransport             *http.Transport
 }
 
 type Server struct {
@@ -59,7 +60,7 @@ func New(opts Options) (*Server, error) {
 		opts.Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	}
 	if opts.ProxyTransport == nil {
-		opts.ProxyTransport = defaultTransport()
+		opts.ProxyTransport = defaultTransport(opts.ProxyResponseHeaderTimeout)
 	}
 
 	s := &Server{
@@ -344,7 +345,10 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	return true, nil
 }
 
-func defaultTransport() *http.Transport {
+func defaultTransport(responseHeaderTimeout time.Duration) *http.Transport {
+	if responseHeaderTimeout <= 0 {
+		responseHeaderTimeout = 60 * time.Second
+	}
 	dialer := &net.Dialer{Timeout: 3 * time.Second, KeepAlive: 30 * time.Second}
 	return &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
@@ -354,7 +358,7 @@ func defaultTransport() *http.Transport {
 		MaxIdleConnsPerHost:   16,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   3 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
+		ResponseHeaderTimeout: responseHeaderTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 }
