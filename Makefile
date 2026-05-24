@@ -13,10 +13,13 @@ CUSTOM_POLICY := internal/config/custom_local.go
 CUSTOM_POLICY_EXAMPLE := examples/custom_local.go.example
 SUDO ?= sudo
 
-.PHONY: build install install-systemd setup-user configure-custom deploy
+.PHONY: build test install install-systemd setup-user configure-custom deploy
 
 build:
 	go build -o $(BUILD_OUTPUT) $(BUILD_TARGET)
+
+test:
+	go test ./...
 
 install: build
 	$(SUDO) install -m 755 $(BUILD_OUTPUT) $(TMP_INSTALL_PATH)
