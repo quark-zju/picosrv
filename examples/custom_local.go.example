@@ -1,0 +1,35 @@
+// 示例：复制到 internal/config/custom_local.go，并使用 -tags custom 编译。
+// 该文件会覆盖仓库内的 custom_config.go，实现你本机私有策略。
+
+//go:build custom
+
+package config
+
+import "net/http"
+
+type customEvaluator struct{}
+
+func NewEvaluator() Evaluator {
+	return customEvaluator{}
+}
+
+func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie bool) Decision {
+	upstreams := map[string]string{
+		"private.example.com": "http://127.0.0.1:9001",
+	}
+
+	upstream, ok := upstreams[ctx.Host]
+	if !ok {
+		return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
+	}
+
+	if hasValidCookie {
+		return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "cookie"}
+	}
+
+	if ctx.Path == "/knock" {
+		return Decision{Kind: DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, AllowReason: "knock"}
+	}
+
+	return Decision{Kind: DecisionDeny, AllowReason: "policy"}
+}

@@ -75,6 +75,14 @@ journalctl -u picosrv.service -f
 
 你可以直接修改 `internal/config/custom_config.go`，并用 `-tags custom` 编译。
 
+如果不想改仓库文件，推荐本地覆盖：
+
+1. 复制 `examples/custom_local.go.example` 到 `internal/config/custom_local.go`
+2. 按需修改你自己的 Host/Path/UA 规则
+3. 使用 `-tags custom` 编译
+
+`.gitignore` 已默认忽略 `internal/config/custom_local.go`，便于保留私有策略不入库。
+
 另外提供模板：
 
 - `examples/custom_policy.go.example`
