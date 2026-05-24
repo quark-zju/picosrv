@@ -30,3 +30,11 @@ type Context struct {
 type Evaluator interface {
 	Evaluate(ctx Context, r *http.Request, hasValidCookie bool) Decision
 }
+
+var evaluatorFactory func() Evaluator
+
+// SetEvaluatorFactory installs a process-local evaluator factory override.
+// Intended for local customization via ignored files (e.g. custom_local.go).
+func SetEvaluatorFactory(factory func() Evaluator) {
+	evaluatorFactory = factory
+}

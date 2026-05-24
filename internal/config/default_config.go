@@ -1,5 +1,3 @@
-//go:build !custom
-
 package config
 
 import (
@@ -10,6 +8,9 @@ import (
 type defaultEvaluator struct{}
 
 func NewEvaluator() Evaluator {
+	if evaluatorFactory != nil {
+		return evaluatorFactory()
+	}
 	return defaultEvaluator{}
 }
 

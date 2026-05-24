@@ -1,17 +1,17 @@
-// 示例：复制到 internal/config/custom_local.go，并使用 -tags custom 编译。
-// 该文件会覆盖仓库内的 custom_config.go，实现你本机私有策略。
-
-//go:build custom
+// 示例：复制到 internal/config/custom_local.go。
+// 该文件通过注册 evaluator 工厂覆盖默认策略，实现本机私有策略。
 
 package config
 
 import "net/http"
 
-type customEvaluator struct{}
-
-func NewEvaluator() Evaluator {
-	return customEvaluator{}
+func init() {
+	SetEvaluatorFactory(func() Evaluator {
+		return customEvaluator{}
+	})
 }
+
+type customEvaluator struct{}
 
 func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie bool) Decision {
 	upstreams := map[string]string{

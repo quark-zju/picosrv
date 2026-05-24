@@ -22,11 +22,7 @@ Access policy is implemented in Go code through an evaluator:
   - `IssueCookieAndRedirect("/")`
   - `Deny404`
 
-Default behavior is deny-by-default. You can customize behavior with build tags:
-
-- default policy file: `//go:build !custom`
-- local policy file: `//go:build custom`
-- build custom binary: `go build -tags custom ./cmd/picosrv`
+Default behavior is deny-by-default. Local customization can register an evaluator factory override via an ignored local file.
 
 ## Security and Cookie
 
