@@ -33,7 +33,21 @@ sudo systemctl enable --now picosrv.socket
 
 安装前：
 - 将二进制放到 `/usr/local/bin/picosrv`
-- 编辑 `/etc/systemd/system/picosrv.service`，把 `PICOSRV_HMAC_SECRET` 替换为一串随机值
+- 推荐使用 `systemctl edit` 覆盖 secret（无需修改主 service 文件）：
+  ```bash
+  sudo systemctl edit picosrv.service
+  ```
+  写入：
+  ```ini
+  [Service]
+  Environment=
+  Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
+  ```
+  然后执行：
+  ```bash
+  sudo systemctl daemon-reload
+  sudo systemctl restart picosrv.service
+  ```
 - 确认运行用户（默认 `www-data`）能读取证书目录
 
 查看日志：
