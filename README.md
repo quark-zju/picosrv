@@ -66,6 +66,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now picosrv.socket
 ```
 
+样例 `picosrv.service` 默认以 `www-data` 运行，请确认该用户对证书目录有读取权限（`/etc/letsencrypt/live` 以及其链接目标 `/etc/letsencrypt/archive`）。
+
 查看日志：
 
 ```bash
