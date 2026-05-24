@@ -235,16 +235,14 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	proxy.Transport = s.transport
 	proxy.FlushInterval = -1
-	baseDirector := proxy.Director
-	proxy.Director = func(r *http.Request) {
-		originalHost := stripDefaultPort(r.Host)
-		originalProto := forwardedProto(r)
-		baseDirector(r)
-		clearNonForwardedXHeaders(r.Header)
-		r.Host = originalHost
-		r.Header.Set("X-Forwarded-Host", originalHost)
-		r.Header.Set("X-Forwarded-Proto", originalProto)
-		r.Header.Set("x-middleware-subrequest", "")
+	proxy.Director = nil
+	proxy.Rewrite = func(r *httputil.ProxyRequest) {
+		r.SetURL(u)
+		r.Out.Host = stripDefaultPort(r.In.Host)
+		clearNonForwardedXHeaders(r.Out.Header)
+		copyInboundXForwardedFor(r)
+		r.SetXForwarded()
+		r.Out.Header.Set("x-middleware-subrequest", "")
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
@@ -384,6 +382,15 @@ func forwardedProto(r *http.Request) string {
 		return "https"
 	}
 	return "http"
+}
+
+func copyInboundXForwardedFor(r *httputil.ProxyRequest) {
+	prior := r.In.Header.Values("X-Forwarded-For")
+	if len(prior) == 0 {
+		r.Out.Header.Del("X-Forwarded-For")
+		return
+	}
+	r.Out.Header["X-Forwarded-For"] = append([]string(nil), prior...)
 }
 
 func appendXForwardedFor(h http.Header, remoteAddr string) {
