@@ -8,7 +8,7 @@ Type=simple
 User=picosrv
 Group=picosrv
 ExecStart=/usr/local/bin/picosrv \
-  --cert-dir /etc/letsencrypt/live \
+  --cert-dir /etc/picosrv/certs \
   --tls-reload-interval 30s
 Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
 Restart=always
@@ -39,7 +39,7 @@ AmbientCapabilities=
 
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=true
-ReadOnlyPaths=/etc/letsencrypt/live /etc/letsencrypt/archive
+ReadOnlyPaths=/etc/picosrv/certs
 
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
