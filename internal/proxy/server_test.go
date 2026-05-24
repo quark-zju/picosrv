@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -239,6 +240,98 @@ func TestStaticFileServingRejectsParentTraversal(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "secret") {
 		t.Fatal("unexpected secret leak")
+	}
+}
+
+func TestProxyRejectsBodyOverLimit(t *testing.T) {
+	upstreamCalled := make(chan struct{}, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "proxy"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/upload", bytes.NewReader(bytes.Repeat([]byte("a"), int(maxRequestBodyBytes)+1)))
+	req.Host = "example.local"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d", resp.StatusCode)
+	}
+
+	select {
+	case <-upstreamCalled:
+		t.Fatal("upstream should not be called for oversized body")
+	default:
+	}
+}
+
+func TestProxyAllowsBodyAtLimit(t *testing.T) {
+	bodySeen := make(chan []byte, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read upstream body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		bodySeen <- body
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "proxy"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	wantBody := bytes.Repeat([]byte("b"), int(maxRequestBodyBytes))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/upload", bytes.NewReader(wantBody))
+	req.Host = "example.local"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+
+	select {
+	case gotBody := <-bodySeen:
+		if !bytes.Equal(gotBody, wantBody) {
+			t.Fatalf("upstream body mismatch: got %d bytes want %d", len(gotBody), len(wantBody))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not observe upstream body")
 	}
 }
 
