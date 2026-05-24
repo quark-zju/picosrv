@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
+User=picosrv
+Group=picosrv
 ExecStart=/usr/local/bin/picosrv \
   --cert-dir /etc/letsencrypt/live \
   --tls-reload-interval 30s
