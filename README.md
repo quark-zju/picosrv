@@ -91,12 +91,6 @@ journalctl -u picosrv.service -f
 
 `.gitignore` 已默认忽略 `internal/config/custom_local.go`，便于保留私有策略不入库。
 
-另外提供模板：
-
-- `examples/custom_policy.go.example`
-
-可把模板内容复制到 `internal/config/custom_config.go` 后再按需修改。
-
 策略入口函数签名：
 
 - 输入：`host/path/ua/query/cookie`
