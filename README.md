@@ -7,10 +7,10 @@
 ### 1. 配置策略
 
 ```bash
-cp examples/custom_local.go.example internal/config/custom_local.go
+make configure-custom
 ```
 
-编辑 `internal/config/custom_local.go`，修改 `hostConfigs` 中的域名配置。每个 Host 可选择：
+首次执行会先从 `examples/custom_local.go.example` 复制到 `internal/config/custom_local.go`，然后用 `EDITOR`（默认 `vim`）打开编辑。修改 `hostConfigs` 中的域名配置。每个 Host 可选择：
 - `Upstream`：转发到本地或远端 HTTP 服务
 - `RootDir`：把某个本地目录作为只读静态文件根目录
 
@@ -19,40 +19,23 @@ cp examples/custom_local.go.example internal/config/custom_local.go
 ### 2. 构建
 
 ```bash
-go build ./cmd/picosrv
+make build
 ```
 
 ### 3. 部署（systemd）
 
-#### 3.1 安装二进制
+#### 3.1 创建服务用户
 
 ```bash
-sudo cp picosrv /usr/local/bin/picosrv
-sudo chmod 755 /usr/local/bin/picosrv
+make setup-user
 ```
 
-#### 3.2 创建服务用户
+默认会创建 `picosrv` 这个 system user / group；已存在时会跳过。
 
-```bash
-sudo adduser \
-  --system \
-  --group \
-  --home /nonexistent \
-  --no-create-home \
-  picosrv
-```
-
-#### 3.3 配置证书目录权限
-
-安装 `setfacl` / `getfacl` 所在软件包（Debian/Ubuntu 为 `acl`）：
+#### 3.2 配置证书目录权限
 
 ```bash
 sudo apt-get install acl
-```
-
-准备证书目录：
-
-```bash
 sudo install -d -m 755 /etc/picosrv/certs
 ```
 
@@ -92,12 +75,11 @@ getfacl /etc/picosrv/certs
 getfacl /etc/picosrv/certs/$DOMAIN
 ```
 
-#### 3.4 安装并启动服务
+#### 3.3 安装二进制和 systemd 配置
 
 ```bash
-sudo cp deploy/systemd/picosrv.service /etc/systemd/system/
-sudo cp deploy/systemd/picosrv.socket /etc/systemd/system/
-sudo systemctl daemon-reload
+make install
+make install-systemd
 ```
 
 推荐使用 `systemctl edit` 覆盖 secret（无需修改主 service 文件）：
@@ -113,6 +95,14 @@ sudo systemctl edit picosrv.service
 Environment=
 Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
 ```
+
+也可以把常用步骤合并执行：
+
+```bash
+make deploy
+```
+
+`make deploy` 等价于依次执行 `make setup-user build install install-systemd`。
 
 然后启动：
 
