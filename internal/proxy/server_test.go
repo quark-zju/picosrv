@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -168,6 +169,96 @@ func TestKnockCookieFlow(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not observe upstream headers")
+	}
+}
+
+func TestProxyStreamsResponseChunks(t *testing.T) {
+	const chunkCount = 4
+
+	type writeEvent struct {
+		chunk int
+		at    time.Time
+	}
+
+	upstreamWriteAt := make(chan writeEvent, chunkCount)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("response writer does not support flushing")
+		}
+
+		w.Header().Set("Content-Type", "text/plain")
+		for i := 1; i <= chunkCount; i++ {
+			if _, err := w.Write([]byte("chunk-" + string(rune('0'+i)) + "\n")); err != nil {
+				t.Fatalf("write chunk %d: %v", i, err)
+			}
+			flusher.Flush()
+			upstreamWriteAt <- writeEvent{chunk: i, at: time.Now()}
+			if i < chunkCount {
+				time.Sleep(120 * time.Millisecond)
+			}
+		}
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "stream"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.CloseIdleConnections()
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxyServer.URL+"/stream", nil)
+	req.Host = "stream.example.local"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	var nextWrite *writeEvent
+	for i := 1; i <= chunkCount; i++ {
+		chunk, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read chunk %d: %v", i, err)
+		}
+		readAt := time.Now()
+		currentWrite := nextWrite
+		if currentWrite == nil {
+			event := <-upstreamWriteAt
+			currentWrite = &event
+		}
+		nextWrite = nil
+
+		want := "chunk-" + string(rune('0'+i)) + "\n"
+		if chunk != want {
+			t.Fatalf("unexpected chunk %d: got %q want %q", i, chunk, want)
+		}
+		if currentWrite.chunk != i {
+			t.Fatalf("out-of-order write event: got chunk %d want %d", currentWrite.chunk, i)
+		}
+		if delay := readAt.Sub(currentWrite.at); delay > 90*time.Millisecond {
+			t.Fatalf("chunk %d was not forwarded promptly, delay=%v", i, delay)
+		}
+		if i < chunkCount {
+			event := <-upstreamWriteAt
+			if !readAt.Before(event.at) {
+				t.Fatalf("chunk %d arrived too late: read at %v, next chunk written at %v", i, readAt, event.at)
+			}
+			nextWrite = &event
+		}
 	}
 }
 

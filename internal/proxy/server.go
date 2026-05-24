@@ -447,6 +447,16 @@ func (s *statusCapture) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+func (s *statusCapture) Flush() {
+	if flusher, ok := s.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (s *statusCapture) Unwrap() http.ResponseWriter {
+	return s.ResponseWriter
+}
+
 type staticHandler struct {
 	root    *os.Root
 	handler http.Handler
