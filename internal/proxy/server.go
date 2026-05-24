@@ -28,7 +28,6 @@ import (
 
 const cookieName = "picosrv_knock"
 const knockCookieTTL = 2 * 365 * 24 * time.Hour
-const maxRequestBodyBytes int64 = 20 << 20
 
 type Options struct {
 	Evaluator         config.Evaluator
@@ -137,46 +136,6 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		cookieValid = s.cookieAuth.Validate(r.Cookie(cookieName))
 		return cookieValid
 	}
-
-	cleanupBody, bodyTooLarge, err := capRequestBody(r, maxRequestBodyBytes)
-	if cleanupBody != nil {
-		defer cleanupBody()
-	}
-	if err != nil {
-		status := http.StatusBadRequest
-		http.Error(w, "bad request", status)
-		s.logger.Error("prepare request body", "error", err, "host", ctx.Host, "path", ctx.Path)
-		s.logger.Info("request",
-			"client_ip", clientIP,
-			"remote_addr", r.RemoteAddr,
-			"method", r.Method,
-			"host", ctx.Host,
-			"path", ctx.Path,
-			"status", status,
-			"upstream", "",
-			"latency_ms", time.Since(start).Milliseconds(),
-			"allow_reason", "invalid_body",
-			"ws_upgrade", false,
-		)
-		return
-	}
-	if bodyTooLarge {
-		status := http.StatusRequestEntityTooLarge
-		http.Error(w, "request entity too large", status)
-		s.logger.Info("request",
-			"client_ip", clientIP,
-			"remote_addr", r.RemoteAddr,
-			"method", r.Method,
-			"host", ctx.Host,
-			"path", ctx.Path,
-			"status", status,
-			"upstream", "",
-			"latency_ms", time.Since(start).Milliseconds(),
-			"allow_reason", "body_too_large",
-			"ws_upgrade", false,
-		)
-		return
-	}
 	decision := s.evaluator.Evaluate(ctx, r, hasValidCookie)
 
 	status := http.StatusNotFound
@@ -260,56 +219,6 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"allow_reason", decision.AllowReason,
 		"ws_upgrade", wsUpgrade,
 	)
-}
-
-func capRequestBody(r *http.Request, limit int64) (cleanup func(), tooLarge bool, err error) {
-	if r == nil || r.Body == nil || r.Body == http.NoBody || limit <= 0 {
-		return nil, false, nil
-	}
-	if r.ContentLength > limit {
-		return nil, true, nil
-	}
-
-	tmp, err := os.CreateTemp("", "picosrv-body-*")
-	if err != nil {
-		return nil, false, err
-	}
-	cleanup = func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-	}
-
-	written, copyErr := io.Copy(tmp, io.LimitReader(r.Body, limit+1))
-	closeErr := r.Body.Close()
-	if copyErr != nil {
-		cleanup()
-		return nil, false, copyErr
-	}
-	if closeErr != nil {
-		cleanup()
-		return nil, false, closeErr
-	}
-	if written > limit {
-		cleanup()
-		return nil, true, nil
-	}
-	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		cleanup()
-		return nil, false, err
-	}
-
-	r.Body = struct {
-		io.Reader
-		io.Closer
-	}{
-		Reader: io.NewSectionReader(tmp, 0, written),
-		Closer: tmp,
-	}
-	r.ContentLength = written
-	if written == 0 {
-		r.Body = http.NoBody
-	}
-	return cleanup, false, nil
 }
 
 func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {

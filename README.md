@@ -51,5 +51,4 @@ journalctl -u picosrv.service -f
 - **本地文件服务**：`DecisionAllowFiles` 使用配置中的 `RootDir` 作为静态文件根目录，只读访问，不允许跳出该目录树。
 - **Cookie**：敲门 cookie 默认有效期 2 年，`HttpOnly`、`Secure`、`SameSite=Lax`。
 - **进程模型**：依赖 systemd socket activation，进程不直接绑定端口。`HMAC secret` 缺失时启动失败。
-- **请求体限制**：HTTP 请求体默认上限 `20 MiB`。超过上限时直接返回 `413 Request Entity Too Large`，不会转发到上游。
 - **测试**：`go test ./internal/config ./internal/proxy ./internal/systemd`。
