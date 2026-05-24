@@ -99,12 +99,9 @@ func (s *Server) RunCertReloader(ctx context.Context) {
 }
 
 func (s *Server) CloseIdleConnections() {
-	if s.transport == nil {
-		goto closeFiles
+	if s.transport != nil {
+		s.transport.CloseIdleConnections()
 	}
-	s.transport.CloseIdleConnections()
-
-closeFiles:
 	s.filesByRoot.Range(func(_, value any) bool {
 		_ = value.(*staticHandler).Close()
 		return true
