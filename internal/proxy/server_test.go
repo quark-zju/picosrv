@@ -24,16 +24,16 @@ import (
 )
 
 type staticEvaluator struct {
-	fn func(ctx config.Context, hasValidCookie bool) config.Decision
+	fn func(ctx config.Context, hasValidCookie func() bool) config.Decision
 }
 
-func (s staticEvaluator) Evaluate(ctx config.Context, _ *http.Request, hasValidCookie bool) config.Decision {
+func (s staticEvaluator) Evaluate(ctx config.Context, _ *http.Request, hasValidCookie func() bool) config.Decision {
 	return s.fn(ctx, hasValidCookie)
 }
 
 func TestDenyByDefault(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
 			return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
 		}},
 		HMACSecret: "secret",
@@ -58,6 +58,39 @@ func TestDenyByDefault(t *testing.T) {
 	}
 }
 
+func TestCookieValidationIsLazy(t *testing.T) {
+	calls := 0
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, hasValidCookie func() bool) config.Decision {
+			calls++
+			// Deliberately never call hasValidCookie for this path.
+			return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/x", nil)
+	req.Host = "example.local"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+	if calls != 1 {
+		t.Fatalf("expected evaluator to run once, got %d", calls)
+	}
+}
+
 func TestKnockCookieFlow(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -66,8 +99,8 @@ func TestKnockCookieFlow(t *testing.T) {
 	defer upstream.Close()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, hasValidCookie bool) config.Decision {
-			if hasValidCookie {
+		Evaluator: staticEvaluator{fn: func(_ config.Context, hasValidCookie func() bool) config.Decision {
+			if hasValidCookie() {
 				return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "cookie"}
 			}
 			return config.Decision{Kind: config.DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, AllowReason: "knock"}
@@ -138,7 +171,7 @@ func TestWebSocketTunnel(t *testing.T) {
 	defer upstream.Close()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "test"}
 		}},
 		HMACSecret: "secret",

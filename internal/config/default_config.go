@@ -18,8 +18,8 @@ func NewEvaluator() Evaluator {
 	return defaultEvaluator{}
 }
 
-func (defaultEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie bool) Decision {
-	if hasValidCookie {
+func (defaultEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie func() bool) Decision {
+	if hasValidCookie() {
 		if upstream, ok := defaultHostUpstreams[ctx.Host]; ok {
 			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "cookie"}
 		}

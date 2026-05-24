@@ -119,7 +119,18 @@ func (s *Server) RedirectHandler() http.Handler {
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	ctx := config.Context{Host: stripDefaultPort(r.Host), Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
-	hasValidCookie := s.cookieAuth.Validate(r.Cookie(cookieName))
+	var (
+		cookieChecked bool
+		cookieValid   bool
+	)
+	hasValidCookie := func() bool {
+		if cookieChecked {
+			return cookieValid
+		}
+		cookieChecked = true
+		cookieValid = s.cookieAuth.Validate(r.Cookie(cookieName))
+		return cookieValid
+	}
 	decision := s.evaluator.Evaluate(ctx, r, hasValidCookie)
 
 	status := http.StatusNotFound

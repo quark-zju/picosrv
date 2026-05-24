@@ -13,7 +13,7 @@ func init() {
 
 type customEvaluator struct{}
 
-func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie bool) Decision {
+func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie func() bool) Decision {
 	upstreams := map[string]string{
 		"private.example.com": "http://127.0.0.1:9001",
 	}
@@ -23,7 +23,7 @@ func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie boo
 		return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
 	}
 
-	if hasValidCookie {
+	if hasValidCookie() {
 		return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "cookie"}
 	}
 

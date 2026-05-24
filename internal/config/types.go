@@ -28,7 +28,7 @@ type Context struct {
 }
 
 type Evaluator interface {
-	Evaluate(ctx Context, r *http.Request, hasValidCookie bool) Decision
+	Evaluate(ctx Context, r *http.Request, hasValidCookie func() bool) Decision
 }
 
 var evaluatorFactory func() Evaluator
