@@ -45,6 +45,8 @@ PICOSRV_HMAC_SECRET='replace-with-long-random-secret' \
 - 根据 TLS SNI 取顶级域名（最后两段），例如 `api.example.com` 使用 `example.com`
 - 从 `cert-dir/<domain>/fullchain.pem` 和 `cert-dir/<domain>/privkey.pem` 加载
 - 当前只考虑这类顶级域映射，不单独处理子域证书目录
+- 证书按需加载：仅在某域名首次被访问时读取该域证书
+- 定时重载仅检查“已使用过”的域名证书，不扫描整个 `cert-dir`
 
 ## 3. systemd 部署
 

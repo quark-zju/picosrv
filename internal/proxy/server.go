@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -392,14 +391,6 @@ func newTLSCertState(certDir string, interval time.Duration, logger *slog.Logger
 		logger:   logger,
 		certs:    make(map[string]certRecord),
 	}
-	records, err := s.loadAll()
-	if err != nil {
-		return nil, err
-	}
-	if len(records) == 0 {
-		return nil, fmt.Errorf("no certificates found in cert dir %q", certDir)
-	}
-	s.certs = records
 	return s, nil
 }
 
@@ -416,7 +407,14 @@ func (s *tlsCertState) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 	rec, ok := s.certs[domain]
 	s.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("certificate for domain %q not found", domain)
+		loaded, err := loadCertRecord(s.certDir, domain)
+		if err != nil {
+			return nil, fmt.Errorf("load certificate for domain %q: %w", domain, err)
+		}
+		s.mu.Lock()
+		s.certs[domain] = loaded
+		s.mu.Unlock()
+		return loaded.cert, nil
 	}
 	return rec.cert, nil
 }
@@ -430,30 +428,33 @@ func (s *tlsCertState) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			newRecords, err := s.loadAll()
-			if err != nil {
-				s.logger.Error("reload certificates", "error", err)
+			s.mu.RLock()
+			domains := make([]string, 0, len(s.certs))
+			for domain := range s.certs {
+				domains = append(domains, domain)
+			}
+			s.mu.RUnlock()
+			if len(domains) == 0 {
 				continue
 			}
-			changed := false
-			s.mu.Lock()
-			if len(newRecords) != len(s.certs) {
-				changed = true
-			} else {
-				for domain, next := range newRecords {
-					curr, ok := s.certs[domain]
-					if !ok || curr.hash != next.hash {
-						changed = true
-						break
-					}
+
+			reloaded := 0
+			for _, domain := range domains {
+				next, err := loadCertRecord(s.certDir, domain)
+				if err != nil {
+					s.logger.Error("reload certificate", "domain", domain, "error", err)
+					continue
 				}
+				s.mu.Lock()
+				curr := s.certs[domain]
+				if curr.hash != next.hash {
+					s.certs[domain] = next
+					reloaded++
+				}
+				s.mu.Unlock()
 			}
-			if changed {
-				s.certs = newRecords
-			}
-			s.mu.Unlock()
-			if changed {
-				s.logger.Info("tls certificates reloaded", "cert_count", len(newRecords))
+			if reloaded > 0 {
+				s.logger.Info("tls certificates reloaded", "reloaded", reloaded)
 			}
 		}
 	}
@@ -462,33 +463,6 @@ func (s *tlsCertState) Run(ctx context.Context) {
 type certRecord struct {
 	cert *tls.Certificate
 	hash uint64
-}
-
-func (s *tlsCertState) loadAll() (map[string]certRecord, error) {
-	entries, err := os.ReadDir(s.certDir)
-	if err != nil {
-		return nil, err
-	}
-
-	records := make(map[string]certRecord)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		domain := normalizeTopLevelDomain(entry.Name())
-		if domain == "" {
-			continue
-		}
-		rec, err := loadCertRecord(s.certDir, domain)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
-			return nil, fmt.Errorf("load domain %s: %w", domain, err)
-		}
-		records[domain] = rec
-	}
-	return records, nil
 }
 
 func loadCertRecord(certDir, domain string) (certRecord, error) {
