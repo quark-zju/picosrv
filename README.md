@@ -61,7 +61,7 @@ sudo install -d -m 755 /etc/picosrv/certs
 ```bash
 DOMAIN=example.com
 sudo install -d -m 755 /etc/picosrv/certs/$DOMAIN
-acme.sh --install-cert -d "$DOMAIN" \
+acme.sh --install-cert -d '*.'"$DOMAIN" \
   --key-file /etc/picosrv/certs/$DOMAIN/privkey.pem \
   --fullchain-file /etc/picosrv/certs/$DOMAIN/fullchain.pem \
   --reloadcmd "systemctl restart picosrv"
