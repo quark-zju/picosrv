@@ -10,9 +10,7 @@
 cp examples/custom_local.go.example internal/config/custom_local.go
 ```
 
-编辑 `internal/config/custom_local.go`，修改 `upstreams` 中的域名和上游地址。需要 SSL 证书的话，确保 `Evaluate` 里有 `/knock` 路径返回 `DecisionIssueCookieAndRedirect`（见示例）。
-
-该文件已被 `.gitignore` 忽略，不会入仓。
+编辑 `internal/config/custom_local.go`，修改 `upstreams` 中的域名和上游地址，按需配置访问限制。
 
 ### 2. 构建
 
