@@ -32,6 +32,12 @@ func (s staticEvaluator) Evaluate(ctx config.Context, _ *http.Request, hasValidC
 	return s.fn(ctx, hasValidCookie)
 }
 
+type flushRecorder struct {
+	http.ResponseWriter
+	flushCalls      int
+	flushErrorCalls int
+}
+
 func TestDenyByDefault(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
@@ -260,6 +266,44 @@ func TestProxyStreamsResponseChunks(t *testing.T) {
 			nextWrite = &event
 		}
 	}
+}
+
+func TestStatusCaptureSupportsResponseControllerFlush(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writer := &flushRecorder{ResponseWriter: recorder}
+	capture := &statusCapture{ResponseWriter: writer, status: http.StatusOK}
+
+	controller := http.NewResponseController(capture)
+	if err := controller.Flush(); err != nil {
+		t.Fatalf("flush via response controller: %v", err)
+	}
+	if writer.flushErrorCalls != 1 {
+		t.Fatalf("expected FlushError to be used once, got %d", writer.flushErrorCalls)
+	}
+	if writer.flushCalls != 0 {
+		t.Fatalf("expected Flush fallback not to be used, got %d", writer.flushCalls)
+	}
+}
+
+func (f *flushRecorder) Header() http.Header {
+	return f.ResponseWriter.Header()
+}
+
+func (f *flushRecorder) Write(p []byte) (int, error) {
+	return f.ResponseWriter.Write(p)
+}
+
+func (f *flushRecorder) WriteHeader(statusCode int) {
+	f.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (f *flushRecorder) Flush() {
+	f.flushCalls++
+}
+
+func (f *flushRecorder) FlushError() error {
+	f.flushErrorCalls++
+	return nil
 }
 
 func TestStaticFileServing(t *testing.T) {

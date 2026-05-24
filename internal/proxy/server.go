@@ -453,6 +453,20 @@ func (s *statusCapture) Flush() {
 	}
 }
 
+func (s *statusCapture) FlushError() error {
+	type flushErrorer interface {
+		FlushError() error
+	}
+	if flusher, ok := s.ResponseWriter.(flushErrorer); ok {
+		return flusher.FlushError()
+	}
+	if flusher, ok := s.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+		return nil
+	}
+	return http.ErrNotSupported
+}
+
 func (s *statusCapture) Unwrap() http.ResponseWriter {
 	return s.ResponseWriter
 }
