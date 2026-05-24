@@ -256,17 +256,22 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	}
 
 	errc := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
+		defer wg.Done()
 		_, copyErr := io.Copy(backendConn, clientConn)
 		errc <- copyErr
 	}()
 	go func() {
+		defer wg.Done()
 		_, copyErr := io.Copy(clientConn, backendConn)
 		errc <- copyErr
 	}()
 	<-errc
 	_ = backendConn.Close()
 	_ = clientConn.Close()
+	wg.Wait()
 	return true, nil
 }
 
