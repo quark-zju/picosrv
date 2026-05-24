@@ -21,8 +21,7 @@ import (
 
 func main() {
 	var (
-		certFile          = flag.String("cert-file", getenv("PICOSRV_CERT_FILE", ""), "tls certificate path")
-		keyFile           = flag.String("key-file", getenv("PICOSRV_KEY_FILE", ""), "tls private key path")
+		certDir           = flag.String("cert-dir", getenv("PICOSRV_CERT_DIR", ""), "tls cert directory (e.g. /etc/letsencrypt/live)")
 		secret            = flag.String("hmac-secret", getenv("PICOSRV_HMAC_SECRET", ""), "hmac secret")
 		reloadIntervalRaw = flag.String("tls-reload-interval", getenv("PICOSRV_TLS_RELOAD_INTERVAL", "30s"), "certificate reload interval")
 	)
@@ -42,8 +41,7 @@ func main() {
 	srv, err := proxy.New(proxy.Options{
 		Evaluator:         config.NewEvaluator(),
 		HMACSecret:        *secret,
-		CertFile:          *certFile,
-		KeyFile:           *keyFile,
+		CertDir:           *certDir,
 		TLSReloadInterval: reloadInterval,
 		Logger:            logger,
 	})
@@ -78,7 +76,7 @@ func main() {
 			if useTLS {
 				tlsCfg := srv.TLSConfig()
 				if tlsCfg == nil {
-					errCh <- errors.New("tls listener configured but no certificate files provided")
+					errCh <- errors.New("tls listener configured but no cert dir provided")
 					return
 				}
 				errCh <- server.Serve(tls.NewListener(listener, tlsCfg))

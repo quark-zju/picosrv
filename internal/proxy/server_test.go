@@ -1,11 +1,20 @@
 package proxy
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -175,4 +184,77 @@ func TestWebSocketTunnel(t *testing.T) {
 	if string(msg) != "echo:ping" {
 		t.Fatalf("unexpected msg: %s", msg)
 	}
+}
+
+func TestNormalizeTopLevelDomain(t *testing.T) {
+	cases := map[string]string{
+		"example.com":      "example.com",
+		"api.example.com":  "example.com",
+		"api.example.com.": "example.com",
+		"127.0.0.1":        "",
+		"localhost":        "",
+	}
+	for in, want := range cases {
+		got := normalizeTopLevelDomain(in)
+		if got != want {
+			t.Fatalf("normalizeTopLevelDomain(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestTLSCertStateLookupByTopLevelDomain(t *testing.T) {
+	tmpDir := t.TempDir()
+	domainDir := filepath.Join(tmpDir, "example.com")
+	if err := os.MkdirAll(domainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	certPEM, keyPEM, err := generateSelfSignedCert("example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "fullchain.pem"), certPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "privkey.pem"), keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := newTLSCertState(tmpDir, time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := state.GetCertificate(&tls.ClientHelloInfo{ServerName: "api.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert == nil || len(cert.Certificate) == 0 {
+		t.Fatal("expected certificate bytes")
+	}
+}
+
+func generateSelfSignedCert(commonName string) ([]byte, []byte, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		return nil, nil, err
+	}
+	template := x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: commonName},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		DNSNames:     []string{commonName},
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+	return certPEM, keyPEM, nil
 }

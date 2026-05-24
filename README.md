@@ -28,8 +28,7 @@ go build -tags custom ./cmd/picosrv
 
 可选：
 
-- `--cert-file` 或 `PICOSRV_CERT_FILE`
-- `--key-file` 或 `PICOSRV_KEY_FILE`
+- `--cert-dir` 或 `PICOSRV_CERT_DIR`（例如 `/etc/letsencrypt/live`）
 - `--tls-reload-interval` 或 `PICOSRV_TLS_RELOAD_INTERVAL`（默认 `30s`）
 
 示例：
@@ -37,10 +36,15 @@ go build -tags custom ./cmd/picosrv
 ```bash
 PICOSRV_HMAC_SECRET='replace-with-long-random-secret' \
 ./picosrv \
-  --cert-file /etc/letsencrypt/live/example.com/fullchain.pem \
-  --key-file /etc/letsencrypt/live/example.com/privkey.pem \
+  --cert-dir /etc/letsencrypt/live \
   --tls-reload-interval 30s
 ```
+
+证书查找规则：
+
+- 根据 TLS SNI 取顶级域名（最后两段），例如 `api.example.com` 使用 `example.com`
+- 从 `cert-dir/<domain>/fullchain.pem` 和 `cert-dir/<domain>/privkey.pem` 加载
+- 当前只考虑这类顶级域映射，不单独处理子域证书目录
 
 ## 3. systemd 部署
 

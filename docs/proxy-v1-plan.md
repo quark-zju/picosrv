@@ -36,9 +36,10 @@ Default behavior is deny-by-default. You can customize behavior with build tags:
 
 ## TLS and Cert Reload
 
-- Cert paths are provided by CLI/ENV.
-- Certificate pair is loaded at startup and polled on interval.
-- On file change, new cert is atomically swapped for new handshakes.
+- Cert directory is provided by CLI/ENV (letsencrypt live layout).
+- Certificate lookup uses SNI top-level domain (last two labels).
+- Files are loaded from `<cert-dir>/<domain>/fullchain.pem` and `<cert-dir>/<domain>/privkey.pem`.
+- Certificates are polled on interval and swapped for new handshakes.
 - Existing connections are not interrupted.
 
 ## Upstream Transport Defaults
@@ -69,8 +70,7 @@ Fields:
 ## CLI / ENV
 
 - `--hmac-secret` / `PICOSRV_HMAC_SECRET` (required)
-- `--cert-file` / `PICOSRV_CERT_FILE`
-- `--key-file` / `PICOSRV_KEY_FILE`
+- `--cert-dir` / `PICOSRV_CERT_DIR`
 - `--tls-reload-interval` / `PICOSRV_TLS_RELOAD_INTERVAL` (default `30s`)
 
 ## Test Coverage

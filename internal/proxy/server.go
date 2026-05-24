@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"picosrv/internal/config"
@@ -31,8 +31,7 @@ const cookieName = "picosrv_knock"
 type Options struct {
 	Evaluator         config.Evaluator
 	HMACSecret        string
-	CertFile          string
-	KeyFile           string
+	CertDir           string
 	TLSReloadInterval time.Duration
 	Logger            *slog.Logger
 	ProxyTransport    *http.Transport
@@ -68,15 +67,12 @@ func New(opts Options) (*Server, error) {
 		transport:  opts.ProxyTransport,
 	}
 
-	if opts.CertFile != "" || opts.KeyFile != "" {
-		if opts.CertFile == "" || opts.KeyFile == "" {
-			return nil, errors.New("both cert and key files are required when TLS is enabled")
-		}
+	if opts.CertDir != "" {
 		reload := opts.TLSReloadInterval
 		if reload <= 0 {
 			reload = 30 * time.Second
 		}
-		state, err := newTLSCertState(opts.CertFile, opts.KeyFile, reload, opts.Logger)
+		state, err := newTLSCertState(opts.CertDir, reload, opts.Logger)
 		if err != nil {
 			return nil, err
 		}
@@ -382,31 +378,47 @@ func (c *cookieSigner) sign(b []byte) []byte {
 }
 
 type tlsCertState struct {
-	certFile string
-	keyFile  string
+	certDir  string
 	interval time.Duration
 	logger   *slog.Logger
-	current  atomic.Pointer[tls.Certificate]
-	lastHash atomic.Uint64
+	mu       sync.RWMutex
+	certs    map[string]certRecord
 }
 
-func newTLSCertState(certFile, keyFile string, interval time.Duration, logger *slog.Logger) (*tlsCertState, error) {
-	s := &tlsCertState{certFile: certFile, keyFile: keyFile, interval: interval, logger: logger}
-	cert, hash, err := s.load()
+func newTLSCertState(certDir string, interval time.Duration, logger *slog.Logger) (*tlsCertState, error) {
+	s := &tlsCertState{
+		certDir:  certDir,
+		interval: interval,
+		logger:   logger,
+		certs:    make(map[string]certRecord),
+	}
+	records, err := s.loadAll()
 	if err != nil {
 		return nil, err
 	}
-	s.current.Store(cert)
-	s.lastHash.Store(hash)
+	if len(records) == 0 {
+		return nil, fmt.Errorf("no certificates found in cert dir %q", certDir)
+	}
+	s.certs = records
 	return s, nil
 }
 
-func (s *tlsCertState) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-	cert := s.current.Load()
-	if cert == nil {
-		return nil, errors.New("certificate not loaded")
+func (s *tlsCertState) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if hello == nil || hello.ServerName == "" {
+		return nil, errors.New("missing SNI server name")
 	}
-	return cert, nil
+	domain := normalizeTopLevelDomain(hello.ServerName)
+	if domain == "" {
+		return nil, fmt.Errorf("invalid SNI server name %q", hello.ServerName)
+	}
+
+	s.mu.RLock()
+	rec, ok := s.certs[domain]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("certificate for domain %q not found", domain)
+	}
+	return rec.cert, nil
 }
 
 func (s *tlsCertState) Run(ctx context.Context) {
@@ -418,37 +430,107 @@ func (s *tlsCertState) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			cert, hash, err := s.load()
+			newRecords, err := s.loadAll()
 			if err != nil {
-				s.logger.Error("reload certificate", "error", err)
+				s.logger.Error("reload certificates", "error", err)
 				continue
 			}
-			if hash != s.lastHash.Load() {
-				s.current.Store(cert)
-				s.lastHash.Store(hash)
-				s.logger.Info("tls certificate reloaded")
+			changed := false
+			s.mu.Lock()
+			if len(newRecords) != len(s.certs) {
+				changed = true
+			} else {
+				for domain, next := range newRecords {
+					curr, ok := s.certs[domain]
+					if !ok || curr.hash != next.hash {
+						changed = true
+						break
+					}
+				}
+			}
+			if changed {
+				s.certs = newRecords
+			}
+			s.mu.Unlock()
+			if changed {
+				s.logger.Info("tls certificates reloaded", "cert_count", len(newRecords))
 			}
 		}
 	}
 }
 
-func (s *tlsCertState) load() (*tls.Certificate, uint64, error) {
-	certPEM, err := os.ReadFile(s.certFile)
+type certRecord struct {
+	cert *tls.Certificate
+	hash uint64
+}
+
+func (s *tlsCertState) loadAll() (map[string]certRecord, error) {
+	entries, err := os.ReadDir(s.certDir)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	keyPEM, err := os.ReadFile(s.keyFile)
+
+	records := make(map[string]certRecord)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		domain := normalizeTopLevelDomain(entry.Name())
+		if domain == "" {
+			continue
+		}
+		rec, err := loadCertRecord(s.certDir, domain)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("load domain %s: %w", domain, err)
+		}
+		records[domain] = rec
+	}
+	return records, nil
+}
+
+func loadCertRecord(certDir, domain string) (certRecord, error) {
+	fullchain := certDir + "/" + domain + "/fullchain.pem"
+	privkey := certDir + "/" + domain + "/privkey.pem"
+	certPEM, err := os.ReadFile(fullchain)
 	if err != nil {
-		return nil, 0, err
+		return certRecord{}, err
+	}
+	keyPEM, err := os.ReadFile(privkey)
+	if err != nil {
+		return certRecord{}, err
 	}
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
-		return nil, 0, err
+		return certRecord{}, err
 	}
 	h := sha256.New()
 	_, _ = h.Write(certPEM)
 	_, _ = h.Write(keyPEM)
 	sum := h.Sum(nil)
 	hash, _ := strconv.ParseUint(fmt.Sprintf("%x", sum[:8]), 16, 64)
-	return &cert, hash, nil
+	return certRecord{cert: &cert, hash: hash}, nil
+}
+
+func normalizeTopLevelDomain(host string) string {
+	host = strings.TrimSpace(strings.ToLower(host))
+	host = strings.TrimSuffix(host, ".")
+	if host == "" {
+		return ""
+	}
+	if strings.Contains(host, ":") {
+		if parsed, _, err := net.SplitHostPort(host); err == nil {
+			host = strings.TrimSuffix(strings.ToLower(parsed), ".")
+		}
+	}
+	if net.ParseIP(host) != nil {
+		return ""
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-2] + "." + parts[len(parts)-1]
 }
