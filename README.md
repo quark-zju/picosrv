@@ -1,57 +1,26 @@
 # picosrv
 
-轻量可定制反向代理，支持：
+轻量可定制反向代理。支持 HTTPS（证书热更新）、基于 Host 的上游转发、WebSocket、systemd socket activation、以及用 Go 代码定制访问策略（如敲门 URL）。
 
-- HTTPS（证书文件热更新，适配 acme.sh / letsencrypt）
-- 基于 `Host` 的上游转发
-- WebSocket
-- systemd socket activation（进程不直接绑定端口）
-- 用代码定制策略，如敲门 URL 等
+## 快速上手
 
-## 1. 构建
+### 1. 配置策略
+
+```bash
+cp examples/custom_local.go.example internal/config/custom_local.go
+```
+
+编辑 `internal/config/custom_local.go`，修改 `upstreams` 中的域名和上游地址。需要 SSL 证书的话，确保 `Evaluate` 里有 `/knock` 路径返回 `DecisionIssueCookieAndRedirect`（见示例）。
+
+该文件已被 `.gitignore` 忽略，不会入仓。
+
+### 2. 构建
 
 ```bash
 go build ./cmd/picosrv
 ```
 
-## 2. 运行参数
-
-必填：
-
-- `--hmac-secret` 或 `PICOSRV_HMAC_SECRET`
-
-可选：
-
-- `--cert-dir` 或 `PICOSRV_CERT_DIR`（例如 `/etc/letsencrypt/live`）
-- `--tls-reload-interval` 或 `PICOSRV_TLS_RELOAD_INTERVAL`（默认 `30s`）
-
-示例：
-
-```bash
-PICOSRV_HMAC_SECRET='replace-with-long-random-secret' \
-./picosrv \
-  --cert-dir /etc/letsencrypt/live \
-  --tls-reload-interval 30s
-```
-
-证书查找规则：
-
-- 根据 TLS SNI 取顶级域名（最后两段），例如 `api.example.com` 使用 `example.com`
-- 从 `cert-dir/<domain>/fullchain.pem` 和 `cert-dir/<domain>/privkey.pem` 加载
-- 当前只考虑这类顶级域映射，不单独处理子域证书目录
-- 证书按需加载：仅在某域名首次被访问时读取该域证书
-- 定时重载仅检查“已使用过”的域名证书，不扫描整个 `cert-dir`
-
-## 3. systemd 部署
-
-示例文件在 `deploy/systemd/`：
-
-- `picosrv.service`：服务定义
-- `picosrv.socket`：默认仅监听 `443`（强制 HTTPS）
-- `picosrv-https-only.socket`：仅监听 `443`
-- `picosrv-uds.socket`：监听 UDS（`/run/picosrv/picosrv.sock`）
-
-常见启用方式（默认仅 443）：
+### 3. 部署（systemd）
 
 ```bash
 sudo cp deploy/systemd/picosrv.service /etc/systemd/system/
@@ -60,7 +29,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now picosrv.socket
 ```
 
-样例 `picosrv.service` 默认以 `www-data` 运行，请确认该用户对证书目录有读取权限（`/etc/letsencrypt/live` 以及其链接目标 `/etc/letsencrypt/archive`）。
+安装前：
+- 将二进制放到 `/usr/local/bin/picosrv`
+- 编辑 `/etc/systemd/system/picosrv.service`，把 `PICOSRV_HMAC_SECRET` 替换为一串随机值
+- 确认运行用户（默认 `www-data`）能读取证书目录
 
 查看日志：
 
@@ -68,47 +40,12 @@ sudo systemctl enable --now picosrv.socket
 journalctl -u picosrv.service -f
 ```
 
-## 4. 策略自定义（推荐流程）
+## 补充说明
 
-生产环境要求：默认策略仅用于示例演示，不适合生产环境。生产部署必须使用自定义策略（`internal/config/custom_local.go`）。
-
-默认策略代码：
-
-- `internal/config/default_config.go`
-
-如果不想改仓库文件，推荐本地覆盖：
-
-1. 复制 `examples/custom_local.go.example` 到 `internal/config/custom_local.go`
-2. 按需修改你自己的 Host/Path/UA 规则
-3. 直接正常编译（无需 build tags）
-
-`.gitignore` 已默认忽略 `internal/config/custom_local.go`，便于保留私有策略不入库。
-
-策略入口函数签名：
-
-- 输入：`host/path/ua/query/cookie`
-- 输出：
-  - `AllowProxy(upstream)`
-  - `IssueCookieAndRedirect("/")`
-  - `Deny404`
-
-## 5. 测试
-
-```bash
-go test ./cmd/picosrv ./internal/config ./internal/proxy ./internal/systemd
-```
-
-当前包含的关键测试：
-
-- 默认拒绝
-- 敲门后写 Cookie 并放行
-- WebSocket 升级与双向透传
-- systemd 环境前置检查
-
-## 6. 注意事项
-
-- 当前运行模型依赖 systemd socket activation。
-- `HMAC secret` 缺失会启动失败（设计如此）。
-- 默认不启用 `80` 监听；如需 HTTP 到 HTTPS 重定向，可自行增加 `ListenStream=80`。
-- 敲门签名 Cookie 的服务端有效期默认是 2 年。
-- `internal/config/default_config.go` 仅作参考示例，生产环境必须使用 `internal/config/custom_local.go` 自定义策略。
+- **运行参数**：`--hmac-secret`（必填）、`--cert-dir`（可选，如 `/etc/letsencrypt/live`）、`--tls-reload-interval`（默认 `30s`）。对应环境变量 `PICOSRV_HMAC_SECRET`、`PICOSRV_CERT_DIR`、`PICOSRV_TLS_RELOAD_INTERVAL`。
+- **证书查找**：根据 TLS SNI 取顶级域名（最后两段），从 `<cert-dir>/<domain>/fullchain.pem` 和 `<domain>/privkey.pem` 加载。按需加载，定时重载仅检查已使用过的域名。
+- **监听端口**：默认仅 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加 `ListenStream=80` 的 socket 文件。UDS 示例见 `deploy/systemd/picosrv-uds.socket`。
+- **策略接口**：输入 `host/path/ua/query/cookie`，输出 `DecisionAllowProxy` / `DecisionIssueCookieAndRedirect` / `DecisionDeny`。默认策略（`internal/config/default_config.go`）仅作示例，生产必须用 `custom_local.go`。
+- **Cookie**：敲门 cookie 默认有效期 2 年，`HttpOnly`、`Secure`、`SameSite=Lax`。
+- **进程模型**：依赖 systemd socket activation，进程不直接绑定端口。`HMAC secret` 缺失时启动失败。
+- **测试**：`go test ./internal/config ./internal/proxy ./internal/systemd`。
