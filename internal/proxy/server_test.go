@@ -143,6 +143,7 @@ func TestKnockCookieFlow(t *testing.T) {
 	req2.Host = "example.local"
 	req2.AddCookie(knockCookie)
 	req2.Header.Set("X-Test-Leak", "should-be-removed")
+	req2.Header.Set("X-Forwarded-For", "198.51.100.9")
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		t.Fatal(err)
@@ -158,6 +159,9 @@ func TestKnockCookieFlow(t *testing.T) {
 		}
 		if hdr.Get("X-Forwarded-Host") == "" {
 			t.Fatal("missing X-Forwarded-Host")
+		}
+		if got := hdr.Values("X-Forwarded-For"); len(got) != 1 || strings.Contains(got[0], "198.51.100.9") {
+			t.Fatalf("expected proxy-generated X-Forwarded-For only, got %q", got)
 		}
 		if got := hdr.Get("X-Test-Leak"); got != "" {
 			t.Fatalf("expected X-Test-Leak to be removed, got %q", got)

@@ -240,9 +240,7 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 		r.SetURL(u)
 		r.Out.Host = stripDefaultPort(r.In.Host)
 		clearNonForwardedXHeaders(r.Out.Header)
-		copyInboundXForwardedFor(r)
 		r.SetXForwarded()
-		r.Out.Header.Set("x-middleware-subrequest", "")
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
@@ -301,11 +299,9 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	clone.URL.Host = u.Host
 	clone.Host = stripDefaultPort(r.Host)
 	clearNonForwardedXHeaders(clone.Header)
-	if clone.Header.Get("X-Forwarded-Host") == "" {
-		clone.Header.Set("X-Forwarded-Host", stripDefaultPort(r.Host))
-	}
+	clearForwardedHeaders(clone.Header)
+	clone.Header.Set("X-Forwarded-Host", stripDefaultPort(r.Host))
 	clone.Header.Set("X-Forwarded-Proto", forwardedProto(r))
-	clone.Header.Set("x-middleware-subrequest", "")
 	clone.Header.Set("Upgrade", "websocket")
 	clone.Header.Set("Connection", "upgrade")
 	appendXForwardedFor(clone.Header, r.RemoteAddr)
@@ -384,15 +380,6 @@ func forwardedProto(r *http.Request) string {
 	return "http"
 }
 
-func copyInboundXForwardedFor(r *httputil.ProxyRequest) {
-	prior := r.In.Header.Values("X-Forwarded-For")
-	if len(prior) == 0 {
-		r.Out.Header.Del("X-Forwarded-For")
-		return
-	}
-	r.Out.Header["X-Forwarded-For"] = append([]string(nil), prior...)
-}
-
 func appendXForwardedFor(h http.Header, remoteAddr string) {
 	ip, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
@@ -420,6 +407,12 @@ func clearNonForwardedXHeaders(h http.Header) {
 		}
 		h.Del(k)
 	}
+}
+
+func clearForwardedHeaders(h http.Header) {
+	h.Del("X-Forwarded-For")
+	h.Del("X-Forwarded-Host")
+	h.Del("X-Forwarded-Proto")
 }
 
 func stripDefaultPort(hostport string) string {
