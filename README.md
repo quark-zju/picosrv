@@ -24,68 +24,93 @@ go build ./cmd/picosrv
 
 ### 3. 部署（systemd）
 
+#### 3.1 安装二进制
+
+```bash
+sudo cp picosrv /usr/local/bin/picosrv
+sudo chmod 755 /usr/local/bin/picosrv
+```
+
+#### 3.2 创建服务用户
+
+```bash
+sudo adduser \
+  --system \
+  --group \
+  --home /nonexistent \
+  --no-create-home \
+  picosrv
+```
+
+#### 3.3 配置证书目录权限
+
+安装 `setfacl` / `getfacl` 所在软件包（Debian/Ubuntu 为 `acl`）：
+
+```bash
+sudo apt-get install acl
+```
+
+给服务账号开放证书目录的穿越权限，以及目标域名证书的只读权限。先处理顶层目录（无需递归）：
+
+```bash
+sudo setfacl -m u:picosrv:rx /etc/letsencrypt/live
+sudo setfacl -m u:picosrv:rx /etc/letsencrypt/archive
+```
+
+然后按域名授权：
+
+```bash
+DOMAIN=example.com
+sudo setfacl -m u:picosrv:rx /etc/letsencrypt/live/$DOMAIN
+sudo setfacl -m u:picosrv:rx /etc/letsencrypt/archive/$DOMAIN
+sudo setfacl -m u:picosrv:r /etc/letsencrypt/archive/$DOMAIN/fullchain1.pem
+sudo setfacl -m u:picosrv:r /etc/letsencrypt/archive/$DOMAIN/privkey1.pem
+```
+
+`live/<domain>/fullchain.pem` 和 `privkey.pem` 通常是指向 `archive/` 的符号链接，实际读取权限以 `archive/` 下的目录和文件 ACL 为准。
+
+确认 `picosrv` 用户确实能读取证书：
+
+```bash
+DOMAIN=example.com
+sudo -u picosrv test -r /etc/letsencrypt/live/$DOMAIN/fullchain.pem
+sudo -u picosrv test -r /etc/letsencrypt/live/$DOMAIN/privkey.pem
+```
+
+两条命令都返回退出码 `0` 即表示可读；也可以用 `getfacl` 查看当前 ACL：
+
+```bash
+getfacl /etc/letsencrypt/live /etc/letsencrypt/archive
+getfacl /etc/letsencrypt/archive/$DOMAIN
+```
+
+#### 3.4 安装并启动服务
+
 ```bash
 sudo cp deploy/systemd/picosrv.service /etc/systemd/system/
 sudo cp deploy/systemd/picosrv.socket /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now picosrv.socket
 ```
 
-安装前：
-- 将二进制放到 `/usr/local/bin/picosrv`
-- 创建专用服务账号（Debian 示例）：
-  ```bash
-  sudo adduser \
-    --system \
-    --group \
-    --home /nonexistent \
-    --no-create-home \
-    picosrv
-  ```
-- 推荐使用 `systemctl edit` 覆盖 secret（无需修改主 service 文件）：
-  ```bash
-  sudo systemctl edit picosrv.service
-  ```
-  写入：
-  ```ini
-  [Service]
-  Environment=
-  Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
-  ```
-  然后执行：
-  ```bash
-  sudo systemctl daemon-reload
-  sudo systemctl restart picosrv.service
-  ```
-- 安装 `setfacl` / `getfacl` 所在软件包（Debian/Ubuntu 为 `acl`）：
-  ```bash
-  sudo apt-get install acl
-  ```
-- 给服务账号开放证书目录的穿越权限，以及目标域名证书的只读权限。先处理顶层目录（无需递归）：
-  ```bash
-  sudo setfacl -m u:picosrv:rx /etc/letsencrypt/live
-  sudo setfacl -m u:picosrv:rx /etc/letsencrypt/archive
-  ```
-  然后按域名授权：
-  ```bash
-  DOMAIN=example.com
-  sudo setfacl -m u:picosrv:rx /etc/letsencrypt/live/$DOMAIN
-  sudo setfacl -m u:picosrv:rx /etc/letsencrypt/archive/$DOMAIN
-  sudo setfacl -m u:picosrv:r /etc/letsencrypt/archive/$DOMAIN/fullchain1.pem
-  sudo setfacl -m u:picosrv:r /etc/letsencrypt/archive/$DOMAIN/privkey1.pem
-  ```
-  `live/<domain>/fullchain.pem` 和 `privkey.pem` 通常是指向 `archive/` 的符号链接，实际读取权限以 `archive/` 下的目录和文件 ACL 为准。
-- 用下面命令确认 `picosrv` 用户确实能读取证书：
-  ```bash
-  DOMAIN=example.com
-  sudo -u picosrv test -r /etc/letsencrypt/live/$DOMAIN/fullchain.pem
-  sudo -u picosrv test -r /etc/letsencrypt/live/$DOMAIN/privkey.pem
-  ```
-  两条命令都返回退出码 `0` 即表示可读；也可以用 `getfacl` 查看当前 ACL：
-  ```bash
-  getfacl /etc/letsencrypt/live /etc/letsencrypt/archive
-  getfacl /etc/letsencrypt/archive/$DOMAIN
-  ```
+推荐使用 `systemctl edit` 覆盖 secret（无需修改主 service 文件）：
+
+```bash
+sudo systemctl edit picosrv.service
+```
+
+写入：
+
+```ini
+[Service]
+Environment=
+Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
+```
+
+然后启动：
+
+```bash
+sudo systemctl enable --now picosrv.socket
+```
 
 查看日志：
 
