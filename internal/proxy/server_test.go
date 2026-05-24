@@ -167,6 +167,81 @@ func TestKnockCookieFlow(t *testing.T) {
 	}
 }
 
+func TestStaticFileServing(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "hello.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowFiles, RootDir: tmpDir, AllowReason: "files"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.CloseIdleConnections()
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/hello.txt", nil)
+	req.Host = "static.example.local"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if string(body) != "hello" {
+		t.Fatalf("unexpected body %q", string(body))
+	}
+}
+
+func TestStaticFileServingRejectsParentTraversal(t *testing.T) {
+	parentDir := t.TempDir()
+	rootDir := filepath.Join(parentDir, "public")
+	if err := os.MkdirAll(rootDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(parentDir, "secret.txt"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowFiles, RootDir: rootDir, AllowReason: "files"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.CloseIdleConnections()
+
+	req := httptest.NewRequest(http.MethodGet, "http://static.example.local/../secret.txt", nil)
+	req.Host = "static.example.local"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "secret") {
+		t.Fatal("unexpected secret leak")
+	}
+}
+
 func TestWebSocketTunnel(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

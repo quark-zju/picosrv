@@ -9,12 +9,14 @@ type DecisionKind int
 const (
 	DecisionDeny DecisionKind = iota
 	DecisionAllowProxy
+	DecisionAllowFiles
 	DecisionIssueCookieAndRedirect
 )
 
 type Decision struct {
 	Kind         DecisionKind
 	Upstream     string
+	RootDir      string
 	AllowReason  string
 	RedirectPath string
 	SetCookie    bool

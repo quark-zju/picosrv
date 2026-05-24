@@ -43,6 +43,7 @@ type Server struct {
 	cookieAuth  *cookieSigner
 	logger      *slog.Logger
 	proxyByHost sync.Map
+	filesByRoot sync.Map
 	transport   *http.Transport
 	tlsState    *tlsCertState
 }
@@ -99,9 +100,15 @@ func (s *Server) RunCertReloader(ctx context.Context) {
 
 func (s *Server) CloseIdleConnections() {
 	if s.transport == nil {
-		return
+		goto closeFiles
 	}
 	s.transport.CloseIdleConnections()
+
+closeFiles:
+	s.filesByRoot.Range(func(_, value any) bool {
+		_ = value.(*staticHandler).Close()
+		return true
+	})
 }
 
 func (s *Server) Handler() http.Handler {
@@ -186,6 +193,18 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		rw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
 		proxy.ServeHTTP(rw, r)
 		status = rw.status
+	case config.DecisionAllowFiles:
+		upstream = decision.RootDir
+		handler, err := s.fileServerFor(decision.RootDir)
+		if err != nil {
+			status = http.StatusBadGateway
+			http.Error(w, "bad gateway", status)
+			s.logger.Error("build file server", "error", err, "root_dir", decision.RootDir)
+			break
+		}
+		rw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
+		handler.ServeHTTP(rw, r)
+		status = rw.status
 	default:
 		status = http.StatusNotFound
 		http.NotFound(w, r)
@@ -235,6 +254,27 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 
 	actual, _ := s.proxyByHost.LoadOrStore(target, proxy)
 	return actual.(*httputil.ReverseProxy), nil
+}
+
+func (s *Server) fileServerFor(rootDir string) (http.Handler, error) {
+	if handler, ok := s.filesByRoot.Load(rootDir); ok {
+		return handler.(*staticHandler).handler, nil
+	}
+
+	root, err := os.OpenRoot(rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("open root dir %q: %w", rootDir, err)
+	}
+	handler := &staticHandler{
+		root:    root,
+		handler: http.FileServerFS(root.FS()),
+	}
+	actual, loaded := s.filesByRoot.LoadOrStore(rootDir, handler)
+	if loaded {
+		_ = handler.Close()
+		return actual.(*staticHandler).handler, nil
+	}
+	return handler.handler, nil
 }
 
 func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target string) (bool, error) {
@@ -403,6 +443,18 @@ type statusCapture struct {
 func (s *statusCapture) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
+}
+
+type staticHandler struct {
+	root    *os.Root
+	handler http.Handler
+}
+
+func (h *staticHandler) Close() error {
+	if h == nil || h.root == nil {
+		return nil
+	}
+	return h.root.Close()
 }
 
 type cookiePayload struct {
