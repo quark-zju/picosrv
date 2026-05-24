@@ -12,8 +12,36 @@ ExecStart=/usr/local/bin/picosrv \
 Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
 Restart=always
 RestartSec=2
-NoNewPrivileges=true
 LimitNOFILE=65535
+
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateIPC=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProcSubset=pid
+DeviceAllow=
+
+NoNewPrivileges=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+AmbientCapabilities=
+
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@resources
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target
