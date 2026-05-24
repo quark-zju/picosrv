@@ -97,6 +97,13 @@ func (s *Server) RunCertReloader(ctx context.Context) {
 	s.tlsState.Run(ctx)
 }
 
+func (s *Server) CloseIdleConnections() {
+	if s.transport == nil {
+		return
+	}
+	s.transport.CloseIdleConnections()
+}
+
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(s.serveHTTP)
 }

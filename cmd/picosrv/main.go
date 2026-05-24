@@ -99,6 +99,7 @@ func main() {
 	for _, s := range httpServers {
 		_ = s.Shutdown(shutdownCtx)
 	}
+	srv.CloseIdleConnections()
 }
 
 func shouldRedirectHTTP(ln net.Listener) bool {
