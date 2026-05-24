@@ -142,6 +142,7 @@ func TestKnockCookieFlow(t *testing.T) {
 	req2, _ := http.NewRequest(http.MethodGet, ts.URL+"/app", nil)
 	req2.Host = "example.local"
 	req2.AddCookie(knockCookie)
+	req2.Header.Set("X-Test-Leak", "should-be-removed")
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +158,9 @@ func TestKnockCookieFlow(t *testing.T) {
 		}
 		if hdr.Get("X-Forwarded-Host") == "" {
 			t.Fatal("missing X-Forwarded-Host")
+		}
+		if got := hdr.Get("X-Test-Leak"); got != "" {
+			t.Fatalf("expected X-Test-Leak to be removed, got %q", got)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not observe upstream headers")

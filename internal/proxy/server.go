@@ -218,6 +218,7 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 		originalHost := stripDefaultPort(r.Host)
 		originalProto := forwardedProto(r)
 		baseDirector(r)
+		clearNonForwardedXHeaders(r.Header)
 		r.Host = originalHost
 		r.Header.Set("X-Forwarded-Host", originalHost)
 		r.Header.Set("X-Forwarded-Proto", originalProto)
@@ -258,6 +259,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	clone.URL.Scheme = "http"
 	clone.URL.Host = u.Host
 	clone.Host = stripDefaultPort(r.Host)
+	clearNonForwardedXHeaders(clone.Header)
 	if clone.Header.Get("X-Forwarded-Host") == "" {
 		clone.Header.Set("X-Forwarded-Host", stripDefaultPort(r.Host))
 	}
@@ -352,6 +354,19 @@ func appendXForwardedFor(h http.Header, remoteAddr string) {
 		return
 	}
 	h.Set("X-Forwarded-For", ip)
+}
+
+func clearNonForwardedXHeaders(h http.Header) {
+	for k := range h {
+		if !strings.HasPrefix(strings.ToLower(k), "x-") {
+			continue
+		}
+		lk := strings.ToLower(k)
+		if lk == "x-forwarded-for" || lk == "x-forwarded-host" || lk == "x-forwarded-proto" {
+			continue
+		}
+		h.Del(k)
+	}
 }
 
 func stripDefaultPort(hostport string) string {
