@@ -234,6 +234,7 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	proxy.Transport = s.transport
+	proxy.FlushInterval = -1
 	baseDirector := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		originalHost := stripDefaultPort(r.Host)
