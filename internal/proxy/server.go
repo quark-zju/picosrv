@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -560,6 +561,10 @@ func (s *tlsCertState) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 	if hello == nil || hello.ServerName == "" {
 		return nil, errors.New("missing SNI server name")
 	}
+	serverName := normalizeServerName(hello.ServerName)
+	if serverName == "" {
+		return nil, fmt.Errorf("invalid SNI server name %q", hello.ServerName)
+	}
 	domain := normalizeTopLevelDomain(hello.ServerName)
 	if domain == "" {
 		return nil, fmt.Errorf("invalid SNI server name %q", hello.ServerName)
@@ -573,10 +578,16 @@ func (s *tlsCertState) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 		if err != nil {
 			return nil, fmt.Errorf("load certificate for domain %q: %w", domain, err)
 		}
+		if err := loaded.matchesServerName(serverName); err != nil {
+			return nil, fmt.Errorf("certificate for domain %q does not cover %q: %w", domain, serverName, err)
+		}
 		s.mu.Lock()
 		s.certs[domain] = loaded
 		s.mu.Unlock()
 		return loaded.cert, nil
+	}
+	if err := rec.matchesServerName(serverName); err != nil {
+		return nil, fmt.Errorf("certificate for domain %q does not cover %q: %w", domain, serverName, err)
 	}
 	return rec.cert, nil
 }
@@ -624,6 +635,7 @@ func (s *tlsCertState) Run(ctx context.Context) {
 
 type certRecord struct {
 	cert *tls.Certificate
+	leaf *x509.Certificate
 	hash uint64
 }
 
@@ -648,12 +660,23 @@ func loadCertRecord(certDir, domain string) (certRecord, error) {
 	if err != nil {
 		return certRecord{}, err
 	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return certRecord{}, err
+	}
 	h := sha256.New()
 	_, _ = h.Write(certPEM)
 	_, _ = h.Write(keyPEM)
 	sum := h.Sum(nil)
 	hash := binary.BigEndian.Uint64(sum[:8])
-	return certRecord{cert: &cert, hash: hash}, nil
+	return certRecord{cert: &cert, leaf: leaf, hash: hash}, nil
+}
+
+func (r certRecord) matchesServerName(serverName string) error {
+	if r.leaf == nil {
+		return errors.New("missing parsed leaf certificate")
+	}
+	return r.leaf.VerifyHostname(serverName)
 }
 
 func safeCertPath(certDir, domain, filename string) (string, error) {
@@ -671,6 +694,18 @@ func writeRawBadGateway(conn net.Conn) error {
 }
 
 func normalizeTopLevelDomain(host string) string {
+	host = normalizeServerName(host)
+	if net.ParseIP(host) != nil {
+		return ""
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-2] + "." + parts[len(parts)-1]
+}
+
+func normalizeServerName(host string) string {
 	host = strings.TrimSpace(strings.ToLower(host))
 	host = strings.TrimSuffix(host, ".")
 	if host == "" {
@@ -681,12 +716,5 @@ func normalizeTopLevelDomain(host string) string {
 			host = strings.TrimSuffix(strings.ToLower(parsed), ".")
 		}
 	}
-	if net.ParseIP(host) != nil {
-		return ""
-	}
-	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
-		return ""
-	}
-	return parts[len(parts)-2] + "." + parts[len(parts)-1]
+	return host
 }

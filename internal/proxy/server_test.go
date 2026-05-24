@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"io"
 	"log/slog"
 	"math/big"
@@ -487,7 +488,7 @@ func TestTLSCertStateLookupByTopLevelDomain(t *testing.T) {
 	if err := os.MkdirAll(domainDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	certPEM, keyPEM, err := generateSelfSignedCert("example.com")
+	certPEM, keyPEM, err := generateSelfSignedCert([]string{"example.com", "*.example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,10 +512,69 @@ func TestTLSCertStateLookupByTopLevelDomain(t *testing.T) {
 	}
 }
 
-func generateSelfSignedCert(commonName string) ([]byte, []byte, error) {
+func TestTLSCertStateRejectsRootDomainForWildcardOnlyCert(t *testing.T) {
+	tmpDir := t.TempDir()
+	domainDir := filepath.Join(tmpDir, "example.com")
+	if err := os.MkdirAll(domainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	certPEM, keyPEM, err := generateSelfSignedCert([]string{"*.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "fullchain.pem"), certPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "privkey.pem"), keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := newTLSCertState(tmpDir, time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.GetCertificate(&tls.ClientHelloInfo{ServerName: "example.com"}); err == nil {
+		t.Fatal("expected root domain lookup to fail for wildcard-only cert")
+	}
+}
+
+func TestTLSCertStateAllowsSubdomainForWildcardOnlyCert(t *testing.T) {
+	tmpDir := t.TempDir()
+	domainDir := filepath.Join(tmpDir, "example.com")
+	if err := os.MkdirAll(domainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	certPEM, keyPEM, err := generateSelfSignedCert([]string{"*.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "fullchain.pem"), certPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "privkey.pem"), keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := newTLSCertState(tmpDir, time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := state.GetCertificate(&tls.ClientHelloInfo{ServerName: "api.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert == nil || len(cert.Certificate) == 0 {
+		t.Fatal("expected certificate bytes")
+	}
+}
+
+func generateSelfSignedCert(dnsNames []string) ([]byte, []byte, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(dnsNames) == 0 {
+		return nil, nil, errors.New("at least one DNS name is required")
 	}
 	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
 	if err != nil {
@@ -522,10 +582,10 @@ func generateSelfSignedCert(commonName string) ([]byte, []byte, error) {
 	}
 	template := x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: commonName},
+		Subject:      pkix.Name{CommonName: dnsNames[0]},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
-		DNSNames:     []string{commonName},
+		DNSNames:     dnsNames,
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
