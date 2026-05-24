@@ -7,7 +7,8 @@ picosrv v1 is a low-memory reverse proxy built with Go standard library componen
 ## Runtime Model
 
 - Listener source: systemd socket activation only (`LISTEN_PID`, `LISTEN_FDS`).
-- HTTP redirect behavior: listeners on TCP port 80 return `301` redirect to HTTPS.
+- Default socket behavior: listen on TCP 443 only (HTTPS-only).
+- Optional redirect behavior: if operator enables TCP port 80 listener, requests return `301` redirect to HTTPS.
 - Other listeners serve proxy traffic. If TLS cert and key are configured, the listener is wrapped with TLS.
 - The process does not bind ports directly.
 

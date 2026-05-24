@@ -53,11 +53,11 @@ PICOSRV_HMAC_SECRET='replace-with-long-random-secret' \
 示例文件在 `deploy/systemd/`：
 
 - `picosrv.service`：服务定义
-- `picosrv.socket`：同时监听 `80/443`
+- `picosrv.socket`：默认仅监听 `443`（强制 HTTPS）
 - `picosrv-https-only.socket`：仅监听 `443`
 - `picosrv-uds.socket`：监听 UDS（`/run/picosrv/picosrv.sock`）
 
-常见启用方式（以 80/443 为例）：
+常见启用方式（默认仅 443）：
 
 ```bash
 sudo cp deploy/systemd/picosrv.service /etc/systemd/system/
@@ -120,4 +120,4 @@ go test ./cmd/picosrv ./internal/config ./internal/proxy ./internal/systemd
 
 - 当前运行模型依赖 systemd socket activation。
 - `HMAC secret` 缺失会启动失败（设计如此）。
-- 若监听 `80`，服务会返回到 HTTPS 的重定向。
+- 默认不启用 `80` 监听；如需 HTTP 到 HTTPS 重定向，可自行增加 `ListenStream=80`。
