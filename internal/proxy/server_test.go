@@ -252,6 +252,21 @@ func TestNormalizeTopLevelDomain(t *testing.T) {
 	}
 }
 
+func TestClientIPFromRemoteAddr(t *testing.T) {
+	cases := map[string]string{
+		"203.0.113.7:44321":  "203.0.113.7",
+		"[2001:db8::1]:9443": "2001:db8::1",
+		"203.0.113.7":        "203.0.113.7",
+		"":                   "",
+	}
+	for in, want := range cases {
+		got := clientIPFromRemoteAddr(in)
+		if got != want {
+			t.Fatalf("clientIPFromRemoteAddr(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
 func TestTLSCertStateLookupByTopLevelDomain(t *testing.T) {
 	tmpDir := t.TempDir()
 	domainDir := filepath.Join(tmpDir, "example.com")

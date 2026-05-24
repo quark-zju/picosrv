@@ -118,6 +118,7 @@ func (s *Server) RedirectHandler() http.Handler {
 
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	clientIP := clientIPFromRemoteAddr(r.RemoteAddr)
 	ctx := config.Context{Host: stripDefaultPort(r.Host), Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
 	var (
 		cookieChecked bool
@@ -191,6 +192,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.logger.Info("request",
+		"client_ip", clientIP,
+		"remote_addr", r.RemoteAddr,
+		"method", r.Method,
 		"host", ctx.Host,
 		"path", ctx.Path,
 		"status", status,
@@ -378,6 +382,17 @@ func stripDefaultPort(hostport string) string {
 		return host
 	}
 	return hostport
+}
+
+func clientIPFromRemoteAddr(remoteAddr string) string {
+	if remoteAddr == "" {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return strings.TrimSpace(host)
+	}
+	return strings.TrimSpace(remoteAddr)
 }
 
 type statusCapture struct {
