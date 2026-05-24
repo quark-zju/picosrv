@@ -25,6 +25,9 @@ func (defaultEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie bo
 		if strings.HasPrefix(ctx.Path, "/public") {
 			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "public_path"}
 		}
+		// Demo-only shortcut: this default config is an example baseline.
+		// Real deployments should replace this file (or use custom build tag policy)
+		// and avoid trusting User-Agent alone for access control decisions.
 		if strings.HasPrefix(strings.ToLower(ctx.UA), "healthcheck") {
 			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "ua_whitelist"}
 		}
