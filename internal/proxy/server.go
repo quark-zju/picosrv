@@ -26,6 +26,7 @@ import (
 )
 
 const cookieName = "picosrv_knock"
+const knockCookieTTL = 2 * 365 * 24 * time.Hour
 
 type Options struct {
 	Evaluator         config.Evaluator
@@ -120,7 +121,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	switch decision.Kind {
 	case config.DecisionIssueCookieAndRedirect:
 		if decision.SetCookie {
-			value, err := s.cookieAuth.Issue(12 * time.Hour)
+			value, err := s.cookieAuth.Issue(knockCookieTTL)
 			if err == nil {
 				http.SetCookie(w, &http.Cookie{
 					Name:     cookieName,
