@@ -70,6 +70,8 @@ journalctl -u picosrv.service -f
 
 ## 4. 策略自定义（推荐流程）
 
+生产环境要求：默认策略仅用于示例演示，不适合生产环境。生产部署必须使用自定义策略（`internal/config/custom_local.go`）。
+
 默认策略代码：
 
 - `internal/config/default_config.go`
@@ -109,3 +111,4 @@ go test ./cmd/picosrv ./internal/config ./internal/proxy ./internal/systemd
 - `HMAC secret` 缺失会启动失败（设计如此）。
 - 默认不启用 `80` 监听；如需 HTTP 到 HTTPS 重定向，可自行增加 `ListenStream=80`。
 - 敲门签名 Cookie 的服务端有效期默认是 2 年。
+- `internal/config/default_config.go` 仅作参考示例，生产环境必须使用 `internal/config/custom_local.go` 自定义策略。
