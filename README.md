@@ -1,12 +1,12 @@
 # picosrv
 
-一个面向低内存 VPS 的轻量反向代理（Go 标准库实现），支持：
+轻量可定制反向代理，支持：
 
-- 基于 `Host` 的上游转发
 - HTTPS（证书文件热更新，适配 acme.sh / letsencrypt）
+- 基于 `Host` 的上游转发
 - WebSocket
-- 敲门 Cookie 放行 + 代码化策略
 - systemd socket activation（进程不直接绑定端口）
+- 用代码定制策略，如敲门 URL 等
 
 ## 1. 构建
 
