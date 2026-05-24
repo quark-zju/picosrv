@@ -1,0 +1,12 @@
+[Unit]
+Description=picosrv UDS socket
+
+[Socket]
+ListenStream=/run/picosrv/picosrv.sock
+SocketMode=0660
+SocketUser=www-data
+SocketGroup=www-data
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target
