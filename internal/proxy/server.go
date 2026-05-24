@@ -215,9 +215,13 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 	proxy.Transport = s.transport
 	baseDirector := proxy.Director
 	proxy.Director = func(r *http.Request) {
+		originalHost := stripDefaultPort(r.Host)
+		originalProto := forwardedProto(r)
 		baseDirector(r)
-		r.Header.Set("X-Forwarded-Host", r.Host)
-		r.Header.Set("X-Forwarded-Proto", forwardedProto(r))
+		r.Host = originalHost
+		r.Header.Set("X-Forwarded-Host", originalHost)
+		r.Header.Set("X-Forwarded-Proto", originalProto)
+		r.Header.Set("x-middleware-subrequest", "")
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
@@ -253,11 +257,15 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	clone := r.Clone(r.Context())
 	clone.URL.Scheme = "http"
 	clone.URL.Host = u.Host
-	clone.Host = u.Host
+	clone.Host = stripDefaultPort(r.Host)
 	if clone.Header.Get("X-Forwarded-Host") == "" {
-		clone.Header.Set("X-Forwarded-Host", r.Host)
+		clone.Header.Set("X-Forwarded-Host", stripDefaultPort(r.Host))
 	}
 	clone.Header.Set("X-Forwarded-Proto", forwardedProto(r))
+	clone.Header.Set("x-middleware-subrequest", "")
+	clone.Header.Set("Upgrade", "websocket")
+	clone.Header.Set("Connection", "upgrade")
+	appendXForwardedFor(clone.Header, r.RemoteAddr)
 
 	if err := clone.Write(backendConn); err != nil {
 		_ = writeRawBadGateway(clientConn)
@@ -328,6 +336,22 @@ func forwardedProto(r *http.Request) string {
 		return "https"
 	}
 	return "http"
+}
+
+func appendXForwardedFor(h http.Header, remoteAddr string) {
+	ip, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		ip = remoteAddr
+	}
+	ip = strings.TrimSpace(ip)
+	if ip == "" {
+		return
+	}
+	if prior := h.Get("X-Forwarded-For"); prior != "" {
+		h.Set("X-Forwarded-For", prior+", "+ip)
+		return
+	}
+	h.Set("X-Forwarded-For", ip)
 }
 
 func stripDefaultPort(hostport string) string {

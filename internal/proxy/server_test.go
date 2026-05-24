@@ -92,7 +92,9 @@ func TestCookieValidationIsLazy(t *testing.T) {
 }
 
 func TestKnockCookieFlow(t *testing.T) {
+	headersSeen := make(chan http.Header, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headersSeen <- r.Header.Clone()
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}))
@@ -147,6 +149,17 @@ func TestKnockCookieFlow(t *testing.T) {
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp2.StatusCode)
+	}
+	select {
+	case hdr := <-headersSeen:
+		if got := hdr.Get("x-middleware-subrequest"); got != "" {
+			t.Fatalf("expected empty x-middleware-subrequest, got %q", got)
+		}
+		if hdr.Get("X-Forwarded-Host") == "" {
+			t.Fatal("missing X-Forwarded-Host")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not observe upstream headers")
 	}
 }
 
