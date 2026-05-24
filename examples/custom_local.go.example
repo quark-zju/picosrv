@@ -3,7 +3,20 @@
 
 package config
 
-import "net/http"
+import (
+	"net/http"
+	// "strings"  // uncomment when uncommenting bypass helpers at the bottom
+)
+
+type hostConfig struct {
+	Upstream  string
+	NeedKnock bool
+}
+
+var hostConfigs = map[string]hostConfig{
+	"app.example.com":    {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
+	"public.example.com": {Upstream: "http://127.0.0.1:8082", NeedKnock: false},
+}
 
 func init() {
 	SetEvaluatorFactory(func() Evaluator {
@@ -14,22 +27,34 @@ func init() {
 type customEvaluator struct{}
 
 func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie func() bool) Decision {
-	upstreams := map[string]string{
-		"private.example.com": "http://127.0.0.1:9001",
-	}
-
-	upstream, ok := upstreams[ctx.Host]
+	cfg, ok := hostConfigs[ctx.Host]
 	if !ok {
 		return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
 	}
 
-	if hasValidCookie() {
-		return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "cookie"}
-	}
-
+	// Knock always works.
 	if ctx.Path == "/knock" {
 		return Decision{Kind: DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, AllowReason: "knock"}
 	}
 
-	return Decision{Kind: DecisionDeny, AllowReason: "policy"}
+	if cfg.NeedKnock {
+		if hasValidCookie() {
+			return Decision{Kind: DecisionAllowProxy, Upstream: cfg.Upstream, AllowReason: "cookie"}
+		}
+		// Uncomment to allow specific paths or UAs to bypass knock:
+		// if isNoKnockPath(ctx.Path) || isNoKnockUA(ctx.UA) {
+		// 	return Decision{Kind: DecisionAllowProxy, Upstream: cfg.Upstream, AllowReason: "no_knock_bypass"}
+		// }
+		return Decision{Kind: DecisionDeny, AllowReason: "policy"}
+	}
+
+	return Decision{Kind: DecisionAllowProxy, Upstream: cfg.Upstream, AllowReason: "public_host"}
 }
+
+// Uncomment to enable bypass helpers.
+// func isNoKnockPath(path string) bool {
+// 	return strings.HasPrefix(path, "/public") || strings.HasPrefix(path, "/.well-known/acme-challenge")
+// }
+// func isNoKnockUA(ua string) bool {
+// 	return strings.HasPrefix(strings.ToLower(ua), "healthcheck")
+// }
