@@ -1,0 +1,11 @@
+[Unit]
+Description=picosrv HTTPS socket
+
+[Socket]
+ListenStream=443
+ListenStream=80
+NoDelay=true
+ReusePort=true
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=picosrv reverse proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/picosrv \
+  --cert-file /etc/letsencrypt/live/example.com/fullchain.pem \
+  --key-file /etc/letsencrypt/live/example.com/privkey.pem \
+  --tls-reload-interval 30s
+Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
