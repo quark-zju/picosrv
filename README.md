@@ -128,7 +128,8 @@ journalctl -u picosrv.service -f
 
 ## 补充说明
 
-- **运行参数**：`--hmac-secret`（必填）、`--cert-dir`（可选，如 `/etc/picosrv/certs`）、`--tls-reload-interval`（默认 `30s`）。对应环境变量 `PICOSRV_HMAC_SECRET`、`PICOSRV_CERT_DIR`、`PICOSRV_TLS_RELOAD_INTERVAL`。
+- **运行参数**：`--hmac-secret`（必填）、`--cert-dir`（可选，如 `/etc/picosrv/certs`）、`--tls-reload-interval`（默认 `30s`）、`--proxy-response-header-timeout`（默认 `60s`）。对应环境变量 `PICOSRV_HMAC_SECRET`、`PICOSRV_CERT_DIR`、`PICOSRV_TLS_RELOAD_INTERVAL`、`PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT`。
+- **反代超时**：`--proxy-response-header-timeout` 控制等待上游返回响应头的时间，默认 `60s`。对应环境变量 `PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT`。
 - **证书查找**：根据 TLS SNI 取顶级域名（最后两段），从 `<cert-dir>/<domain>/fullchain.pem` 和 `<domain>/privkey.pem` 加载。按需加载，定时重载仅检查已使用过的域名。
 - **监听端口**：默认仅 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加 `ListenStream=80` 的 socket 文件。UDS 示例见 `deploy/systemd/picosrv-uds.socket`。
 - **策略接口**：输入 `host/path/ua/query/cookie`，输出 `DecisionAllowProxy` / `DecisionAllowFiles` / `DecisionIssueCookieAndRedirect` / `DecisionDeny`。默认策略（`internal/config/default_config.go`）仅作示例，生产必须用 `custom_local.go`。
