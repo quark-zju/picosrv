@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +18,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -144,9 +145,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case config.DecisionAllowProxy:
 		upstream = decision.Upstream
 		if wsUpgrade {
-			if err := s.proxyWebSocket(w, r, decision.Upstream); err != nil {
+			hijacked, err := s.proxyWebSocket(w, r, decision.Upstream)
+			if err != nil {
 				status = http.StatusBadGateway
-				http.Error(w, "bad gateway", status)
+				if !hijacked {
+					http.Error(w, "bad gateway", status)
+				}
 				s.logger.Error("websocket proxy failed", "error", err)
 				break
 			}
@@ -206,26 +210,26 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 	return actual.(*httputil.ReverseProxy), nil
 }
 
-func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target string) error {
+func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target string) (bool, error) {
 	u, err := url.Parse(target)
 	if err != nil {
-		return err
+		return false, err
 	}
 	backendConn, err := s.transport.DialContext(r.Context(), "tcp", u.Host)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		_ = backendConn.Close()
-		return errors.New("response writer does not support hijack")
+		return false, errors.New("response writer does not support hijack")
 	}
 
 	clientConn, clientRW, err := hj.Hijack()
 	if err != nil {
 		_ = backendConn.Close()
-		return err
+		return false, err
 	}
 
 	clone := r.Clone(r.Context())
@@ -238,15 +242,17 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	clone.Header.Set("X-Forwarded-Proto", forwardedProto(r))
 
 	if err := clone.Write(backendConn); err != nil {
+		_ = writeRawBadGateway(clientConn)
 		_ = backendConn.Close()
 		_ = clientConn.Close()
-		return err
+		return true, err
 	}
 
 	if err := clientRW.Flush(); err != nil {
+		_ = writeRawBadGateway(clientConn)
 		_ = backendConn.Close()
 		_ = clientConn.Close()
-		return err
+		return true, err
 	}
 
 	errc := make(chan error, 2)
@@ -261,7 +267,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	<-errc
 	_ = backendConn.Close()
 	_ = clientConn.Close()
-	return nil
+	return true, nil
 }
 
 func defaultTransport() *http.Transport {
@@ -467,8 +473,14 @@ type certRecord struct {
 }
 
 func loadCertRecord(certDir, domain string) (certRecord, error) {
-	fullchain := certDir + "/" + domain + "/fullchain.pem"
-	privkey := certDir + "/" + domain + "/privkey.pem"
+	fullchain, err := safeCertPath(certDir, domain, "fullchain.pem")
+	if err != nil {
+		return certRecord{}, err
+	}
+	privkey, err := safeCertPath(certDir, domain, "privkey.pem")
+	if err != nil {
+		return certRecord{}, err
+	}
 	certPEM, err := os.ReadFile(fullchain)
 	if err != nil {
 		return certRecord{}, err
@@ -485,8 +497,22 @@ func loadCertRecord(certDir, domain string) (certRecord, error) {
 	_, _ = h.Write(certPEM)
 	_, _ = h.Write(keyPEM)
 	sum := h.Sum(nil)
-	hash, _ := strconv.ParseUint(fmt.Sprintf("%x", sum[:8]), 16, 64)
+	hash := binary.BigEndian.Uint64(sum[:8])
 	return certRecord{cert: &cert, hash: hash}, nil
+}
+
+func safeCertPath(certDir, domain, filename string) (string, error) {
+	root := filepath.Clean(certDir)
+	candidate := filepath.Clean(filepath.Join(root, domain, filename))
+	if candidate != root && !strings.HasPrefix(candidate, root+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid certificate path for domain %q", domain)
+	}
+	return candidate, nil
+}
+
+func writeRawBadGateway(conn net.Conn) error {
+	_, err := conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 11\r\n\r\nbad gateway"))
+	return err
 }
 
 func normalizeTopLevelDomain(host string) string {
