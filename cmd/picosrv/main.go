@@ -28,20 +28,20 @@ func main() {
 	)
 	flag.Parse()
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
 	if *secret == "" {
-		exitErr(errors.New("hmac secret is required (flag --hmac-secret or PICOSRV_HMAC_SECRET)"))
+		exitErr(logger, errors.New("hmac secret is required (flag --hmac-secret or PICOSRV_HMAC_SECRET)"))
 	}
 
 	reloadInterval, err := time.ParseDuration(*reloadIntervalRaw)
 	if err != nil {
-		exitErr(fmt.Errorf("invalid tls-reload-interval: %w", err))
+		exitErr(logger, fmt.Errorf("invalid tls-reload-interval: %w", err))
 	}
 	responseHeaderTimeout, err := time.ParseDuration(*responseHeaderTimeoutRaw)
 	if err != nil {
-		exitErr(fmt.Errorf("invalid proxy-response-header-timeout: %w", err))
+		exitErr(logger, fmt.Errorf("invalid proxy-response-header-timeout: %w", err))
 	}
-
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	srv, err := proxy.New(proxy.Options{
 		Evaluator:                  config.NewEvaluator(),
@@ -52,12 +52,12 @@ func main() {
 		Logger:                     logger,
 	})
 	if err != nil {
-		exitErr(err)
+		exitErr(logger, err)
 	}
 
 	listeners, err := systemd.Listeners()
 	if err != nil {
-		exitErr(err)
+		exitErr(logger, err)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -96,7 +96,7 @@ func main() {
 	case <-ctx.Done():
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			exitErr(err)
+			exitErr(logger, err)
 		}
 	}
 
@@ -122,7 +122,14 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
-func exitErr(err error) {
-	_, _ = os.Stderr.WriteString(err.Error() + "\n")
+func exitErr(logger *slog.Logger, err error) {
+	logErr(logger, err)
 	os.Exit(1)
+}
+
+func logErr(logger *slog.Logger, err error) {
+	if logger == nil {
+		logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	}
+	logger.Error("fatal error", "error", err)
 }
