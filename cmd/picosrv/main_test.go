@@ -28,3 +28,25 @@ func TestLogErrEmitsJSON(t *testing.T) {
 		t.Fatalf("error = %v, want %q", got, want)
 	}
 }
+
+func TestSlogErrorLogEmitsJSON(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	stdlog := slogErrorLog(logger)
+	if stdlog == nil {
+		t.Fatal("slogErrorLog returned nil")
+	}
+	stdlog.Output(2, "http: TLS handshake error from 1.2.3.4:1234: missing SNI server name")
+
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("unmarshal log entry: %v", err)
+	}
+	if got, want := entry["level"], "ERROR"; got != want {
+		t.Fatalf("level = %v, want %q", got, want)
+	}
+	if _, ok := entry["msg"].(string); !ok {
+		t.Fatalf("msg is missing or not a string: %v", entry["msg"])
+	}
+}

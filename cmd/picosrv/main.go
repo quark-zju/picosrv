@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -75,7 +76,11 @@ func main() {
 			h = srv.RedirectHandler()
 		}
 
-		httpSrv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second}
+		httpSrv := &http.Server{
+			Handler:           h,
+			ReadHeaderTimeout: 5 * time.Second,
+			ErrorLog:          slogErrorLog(logger),
+		}
 		httpServers = append(httpServers, httpSrv)
 
 		go func(listener net.Listener, server *http.Server, useTLS bool) {
@@ -132,4 +137,11 @@ func logErr(logger *slog.Logger, err error) {
 		logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	}
 	logger.Error("fatal error", "error", err)
+}
+
+func slogErrorLog(logger *slog.Logger) *log.Logger {
+	if logger == nil {
+		logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	}
+	return slog.NewLogLogger(logger.Handler(), slog.LevelError)
 }
