@@ -116,6 +116,12 @@ sudo systemctl enable --now picosrv.socket
 journalctl -u picosrv.service -f
 ```
 
+服务日志统一为 JSON；如果只想看原始单行输出，可以加：
+
+```bash
+journalctl -u picosrv.service -f -o cat
+```
+
 ## 补充说明
 
 - **运行参数**：`--hmac-secret`（必填）、`--cert-dir`（可选，如 `/etc/picosrv/certs`）、`--tls-reload-interval`（默认 `30s`）、`--proxy-response-header-timeout`（默认 `60s`）。对应环境变量 `PICOSRV_HMAC_SECRET`、`PICOSRV_CERT_DIR`、`PICOSRV_TLS_RELOAD_INTERVAL`、`PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT`。
@@ -126,4 +132,5 @@ journalctl -u picosrv.service -f
 - **本地文件服务**：`DecisionAllowFiles` 使用配置中的 `RootDir` 作为静态文件根目录，只读访问，不允许跳出该目录树。
 - **Cookie**：敲门 cookie 默认有效期 2 年，`HttpOnly`、`Secure`、`SameSite=Lax`。
 - **进程模型**：依赖 systemd socket activation，进程不直接绑定端口。`HMAC secret` 缺失时启动失败。
+- **日志格式**：运行日志和启动失败日志都输出 JSON，便于 `journalctl`、Loki/ELK 等按字段采集和过滤。
 - **测试**：`go test ./internal/config ./internal/proxy ./internal/systemd`。
