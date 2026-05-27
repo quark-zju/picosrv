@@ -61,11 +61,8 @@ acme.sh --install-cert -d '*.'"$DOMAIN" \
 
 ```bash
 DOMAIN=example.com
-sudo setfacl \
-  -m u:picosrv:rx /etc/picosrv/certs \
-  -m u:picosrv:rx /etc/picosrv/certs/$DOMAIN \
-  -m u:picosrv:r /etc/picosrv/certs/$DOMAIN/fullchain.pem \
-  -m u:picosrv:r /etc/picosrv/certs/$DOMAIN/privkey.pem
+sudo setfacl -m u:picosrv:rx /etc/picosrv/certs
+sudo setfacl -R -m u:picosrv:rX /etc/picosrv/certs/$DOMAIN
 ```
 
 ### 4. 启动
