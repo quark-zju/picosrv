@@ -29,6 +29,7 @@ import (
 
 const cookieName = "picosrv_knock"
 const knockCookieTTL = 2 * 365 * 24 * time.Hour
+const defaultWebSocketIdleTimeout = 60 * time.Second
 
 type Options struct {
 	Evaluator                  config.Evaluator
@@ -36,6 +37,7 @@ type Options struct {
 	CertDir                    string
 	TLSReloadInterval          time.Duration
 	ProxyResponseHeaderTimeout time.Duration
+	WebSocketIdleTimeout       time.Duration
 	Logger                     *slog.Logger
 	ProxyTransport             *http.Transport
 }
@@ -48,6 +50,7 @@ type Server struct {
 	filesByRoot sync.Map
 	transport   *http.Transport
 	tlsState    *tlsCertState
+	wsTimeout   time.Duration
 }
 
 func New(opts Options) (*Server, error) {
@@ -63,12 +66,16 @@ func New(opts Options) (*Server, error) {
 	if opts.ProxyTransport == nil {
 		opts.ProxyTransport = defaultTransport(opts.ProxyResponseHeaderTimeout)
 	}
+	if opts.WebSocketIdleTimeout <= 0 {
+		opts.WebSocketIdleTimeout = defaultWebSocketIdleTimeout
+	}
 
 	s := &Server{
 		evaluator:  opts.Evaluator,
 		cookieAuth: newCookieSigner(opts.HMACSecret),
 		logger:     opts.Logger,
 		transport:  opts.ProxyTransport,
+		wsTimeout:  opts.WebSocketIdleTimeout,
 	}
 
 	if opts.CertDir != "" {
@@ -338,7 +345,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	}()
 	go func() {
 		defer wg.Done()
-		_, copyErr := io.Copy(clientConn, backendConn)
+		_, copyErr := copyWithReadIdleTimeout(clientConn, backendConn, s.wsTimeout)
 		errc <- copyErr
 	}()
 	<-errc
@@ -346,6 +353,36 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	_ = clientConn.Close()
 	wg.Wait()
 	return true, nil
+}
+
+func copyWithReadIdleTimeout(dst net.Conn, src net.Conn, timeout time.Duration) (int64, error) {
+	if timeout <= 0 {
+		return io.Copy(dst, src)
+	}
+
+	buf := make([]byte, 32*1024)
+	var written int64
+	for {
+		if err := src.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+			return written, err
+		}
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[:nr])
+			if nw > 0 {
+				written += int64(nw)
+			}
+			if ew != nil {
+				return written, ew
+			}
+			if nr != nw {
+				return written, io.ErrShortWrite
+			}
+		}
+		if er != nil {
+			return written, er
+		}
+	}
 }
 
 func defaultTransport(responseHeaderTimeout time.Duration) *http.Transport {

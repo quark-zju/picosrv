@@ -451,6 +451,58 @@ func TestWebSocketTunnel(t *testing.T) {
 	}
 }
 
+func TestWebSocketUpstreamIdleTimeout(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		time.Sleep(250 * time.Millisecond)
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "test"}
+		}},
+		HMACSecret:           "secret",
+		Logger:               slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WebSocketIdleTimeout: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+
+	proxyURL, err := url.Parse(proxyServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsURL := "ws://" + proxyURL.Host + "/ws"
+
+	hdr := http.Header{}
+	hdr.Set("Host", "example.local")
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, hdr)
+	if err != nil {
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("expected websocket read to fail after upstream idle timeout")
+	}
+}
+
 func TestWebSocketRejectsSecureUpstream(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {

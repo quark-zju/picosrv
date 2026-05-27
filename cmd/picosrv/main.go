@@ -26,6 +26,7 @@ func main() {
 		secret                   = flag.String("hmac-secret", getenv("PICOSRV_HMAC_SECRET", ""), "hmac secret")
 		reloadIntervalRaw        = flag.String("tls-reload-interval", getenv("PICOSRV_TLS_RELOAD_INTERVAL", "30s"), "certificate reload interval")
 		responseHeaderTimeoutRaw = flag.String("proxy-response-header-timeout", getenv("PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT", "60s"), "timeout waiting for upstream response headers")
+		webSocketIdleTimeoutRaw  = flag.String("websocket-idle-timeout", getenv("PICOSRV_WEBSOCKET_IDLE_TIMEOUT", "60s"), "timeout waiting for upstream websocket data")
 	)
 	flag.Parse()
 
@@ -43,6 +44,10 @@ func main() {
 	if err != nil {
 		exitErr(logger, fmt.Errorf("invalid proxy-response-header-timeout: %w", err))
 	}
+	webSocketIdleTimeout, err := time.ParseDuration(*webSocketIdleTimeoutRaw)
+	if err != nil {
+		exitErr(logger, fmt.Errorf("invalid websocket-idle-timeout: %w", err))
+	}
 
 	srv, err := proxy.New(proxy.Options{
 		Evaluator:                  config.NewEvaluator(),
@@ -50,6 +55,7 @@ func main() {
 		CertDir:                    *certDir,
 		TLSReloadInterval:          reloadInterval,
 		ProxyResponseHeaderTimeout: responseHeaderTimeout,
+		WebSocketIdleTimeout:       webSocketIdleTimeout,
 		Logger:                     logger,
 	})
 	if err != nil {
