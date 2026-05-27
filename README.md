@@ -1,104 +1,61 @@
 # picosrv
 
-轻量可定制反向代理。支持 HTTPS（证书热更新）、基于 Host 的上游转发、按 Host 映射本地只读文件目录、WebSocket、systemd socket activation、以及用 Go 代码定制访问策略（如敲门 URL）。
+轻量反向代理，基于 systemd socket activation，支持 HTTPS、按域名转发或提供静态文件、WebSocket、敲门访问控制。
 
 ## 快速上手
 
-### 1. 配置策略
+### 1. 配置
 
 ```bash
 make config
 ```
 
-首次执行会先从 `examples/custom_local.go.example` 复制到 `internal/config/custom_local.go`，然后用 `EDITOR`（默认 `vim`）打开编辑。修改 `hostConfigs` 中的域名配置。每个 Host 可选择：
-- `Upstream`：转发到本地或远端 HTTP 服务
-- `RootDir`：把某个本地目录作为只读静态文件根目录
+首次运行会从 `examples/custom_local.go.example` 复制模板到 `internal/config/custom_local.go`，并打开编辑器。编辑其中的 `hostConfigs` 即可定义你的域名规则——每个域名支持两种模式：
 
-`RootDir` 模式下，服务端会将访问严格限制在该目录树内，不能通过 `..` 或越界符号链接跳出到父目录。
+- **反向代理** (`Upstream`)：将请求转发到指定的 HTTP 上游服务。
+- **静态文件** (`RootDir`)：以只读方式提供本地目录下的文件（不能通过 `..` 或越界符号链接跳出该目录）。
 
-### 2. 构建
+示例：
 
-```bash
-make build
+```go
+var hostConfigs = map[string]hostConfig{
+    "app.example.com":    {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
+    "public.example.com": {Upstream: "http://127.0.0.1:8082", NeedKnock: false},
+    "files.example.com":  {RootDir: "/srv/files.example.com", NeedKnock: false},
+}
 ```
 
-### 3. 部署（systemd）
-
-#### 3.1 创建服务用户
-
-```bash
-make setup-user
-```
-
-默认会创建 `picosrv` 这个 system user / group；已存在时会跳过。
-
-#### 3.2 配置证书目录权限
-
-```bash
-sudo apt-get install acl
-sudo install -d -m 755 /etc/picosrv/certs
-```
-
-如果使用 `acme.sh`，可以把证书安装到 `picosrv` 自己的目录：
-
-```bash
-DOMAIN=example.com
-sudo install -d -m 755 /etc/picosrv/certs/$DOMAIN
-acme.sh --install-cert -d '*.'"$DOMAIN" \
-  --key-file /etc/picosrv/certs/$DOMAIN/privkey.pem \
-  --fullchain-file /etc/picosrv/certs/$DOMAIN/fullchain.pem \
-  --reloadcmd "systemctl restart picosrv"
-```
-
-给服务账号开放证书目录的穿越权限，以及目标域名证书的只读权限：
-
-```bash
-DOMAIN=example.com
-sudo setfacl -m u:picosrv:rx /etc/picosrv/certs
-sudo setfacl -m u:picosrv:rx /etc/picosrv/certs/$DOMAIN
-sudo setfacl -m u:picosrv:r /etc/picosrv/certs/$DOMAIN/fullchain.pem
-sudo setfacl -m u:picosrv:r /etc/picosrv/certs/$DOMAIN/privkey.pem
-```
-
-确认 `picosrv` 用户确实能读取证书：
-
-```bash
-DOMAIN=example.com
-sudo -u picosrv test -r /etc/picosrv/certs/$DOMAIN/fullchain.pem
-sudo -u picosrv test -r /etc/picosrv/certs/$DOMAIN/privkey.pem
-```
-
-两条命令都返回退出码 `0` 即表示可读；也可以用 `getfacl` 查看当前 ACL：
-
-```bash
-getfacl /etc/picosrv/certs
-getfacl /etc/picosrv/certs/$DOMAIN
-```
-
-#### 3.3 安装二进制和 systemd 配置
-
-```bash
-make install
-make install-systemd
-```
-
-创建本机 secret 配置文件：
-
-```bash
-make install-secret
-```
-
-该命令会创建 `/etc/picosrv/picosrv.env`，如果文件已存在则不会覆盖。`deploy/systemd/picosrv.service` 会从这个文件读取 `PICOSRV_HMAC_SECRET`。程序会拒绝旧的占位值 `replace-with-long-random-secret`。
-
-也可以把常用步骤合并执行：
+### 2. 构建并部署
 
 ```bash
 make deploy
 ```
 
-`make deploy` 等价于依次执行 `make setup-user build install install-secret install-systemd`。
+这一步会依次执行：创建 picosrv 系统用户、编译二进制、安装到 `/usr/local/bin`、生成 HMAC 密钥、安装 systemd 单元。
 
-然后启动：
+### 3. 准备证书
+
+将域名证书放到 `/etc/picosrv/certs/<域名>/` 目录下，每个域名包含两个文件：
+
+```
+/etc/picosrv/certs/
+└── example.com/
+    ├── fullchain.pem
+    └── privkey.pem
+```
+
+如果使用 acme.sh，证书更新后可通过 `systemctl restart picosrv` 触发热加载（也支持定时自动检测，见下文标志）。
+
+确保 picosrv 用户能读取证书：
+
+```bash
+sudo setfacl -m u:picosrv:rx /etc/picosrv/certs
+sudo setfacl -m u:picosrv:rx /etc/picosrv/certs/example.com
+sudo setfacl -m u:picosrv:r /etc/picosrv/certs/example.com/fullchain.pem
+sudo setfacl -m u:picosrv:r /etc/picosrv/certs/example.com/privkey.pem
+```
+
+### 4. 启动
 
 ```bash
 sudo systemctl enable --now picosrv.socket
@@ -107,24 +64,31 @@ sudo systemctl enable --now picosrv.socket
 查看日志：
 
 ```bash
-journalctl -u picosrv.service -f
-```
-
-服务日志统一为 JSON；如果只想看原始单行输出，可以加：
-
-```bash
 journalctl -u picosrv.service -f -o cat
 ```
 
-## 补充说明
+## 运行机制
 
-- **运行参数**：`--hmac-secret`（必填）、`--cert-dir`（可选，如 `/etc/picosrv/certs`）、`--tls-reload-interval`（默认 `30s`）、`--proxy-response-header-timeout`（默认 `60s`）、`--websocket-idle-timeout`（默认 `60s`）。对应环境变量 `PICOSRV_HMAC_SECRET`、`PICOSRV_CERT_DIR`、`PICOSRV_TLS_RELOAD_INTERVAL`、`PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT`、`PICOSRV_WEBSOCKET_IDLE_TIMEOUT`。
-- **反代超时**：`--proxy-response-header-timeout` 控制等待上游返回响应头的时间，默认 `60s`。`--websocket-idle-timeout` 控制 WebSocket 上游静默时间，默认 `60s`；上游发送 ping/pong 或任何数据都会刷新该超时。
-- **证书查找**：根据 TLS SNI 取顶级域名（最后两段），从 `<cert-dir>/<domain>/fullchain.pem` 和 `<domain>/privkey.pem` 加载。按需加载，定时重载仅检查已使用过的域名。
-- **监听端口**：默认仅 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加 `ListenStream=80` 的 socket 文件。UDS 示例见 `deploy/systemd/picosrv-uds.socket`。
-- **策略接口**：输入 `host/path/ua/query/cookie`，输出 `DecisionAllowProxy` / `DecisionAllowFiles` / `DecisionIssueCookieAndRedirect` / `DecisionDeny`。默认策略（`internal/config/default_config.go`）仅作示例，生产必须用 `custom_local.go`。
-- **本地文件服务**：`DecisionAllowFiles` 使用配置中的 `RootDir` 作为静态文件根目录，只读访问，不允许跳出该目录树。
-- **Cookie**：敲门 cookie 默认有效期 2 年，`HttpOnly`、`Secure`、`SameSite=Lax`。
-- **进程模型**：依赖 systemd socket activation，进程不直接绑定端口。`HMAC secret` 缺失时启动失败。
-- **日志格式**：运行日志和启动失败日志都输出 JSON，便于 `journalctl`、Loki/ELK 等按字段采集和过滤。
-- **测试**：`go test ./internal/config ./internal/proxy ./internal/systemd`。
+- **监听方式**：进程不直接绑定端口，由 systemd 通过 socket activation 传入已监听的 socket，因此重启服务不会丢失连接。默认监听 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加一个 `ListenStream=80` 的 socket 文件。
+- **证书加载**：根据 TLS SNI 取顶级域名，从 `cert-dir` 下对应子目录加载证书。已使用过的域名会按 `tls-reload-interval` 定时重载（默认 30 秒），无需重启。
+- **访问控制**：请求经过策略模块，根据 Host、Path、UA、Query、Cookie 等信息返回决策。默认策略仅作示例，生产环境通过 `internal/config/custom_local.go` 覆盖。决策类型包括：允许代理、允许文件服务、签发敲门 Cookie 并重定向、拒绝。
+- **敲门 Cookie**：`HttpOnly`、`Secure`、`SameSite=Lax`，默认有效期 2 年。
+- **日志**：统一输出 JSON 格式，便于 journald / Loki / ELK 等工具采集。
+
+## 命令行标志
+
+所有标志均可通过环境变量设置。
+
+| 标志 | 环境变量 | 默认值 | 说明 |
+|---|---|---|---|
+| `--hmac-secret` | `PICOSRV_HMAC_SECRET` | — | **必填**。HMAC 密钥 |
+| `--cert-dir` | `PICOSRV_CERT_DIR` | — | 证书根目录，如 `/etc/picosrv/certs` |
+| `--tls-reload-interval` | `PICOSRV_TLS_RELOAD_INTERVAL` | `30s` | 证书热加载检查间隔 |
+| `--proxy-response-header-timeout` | `PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT` | `60s` | 等待上游响应头的超时 |
+| `--websocket-idle-timeout` | `PICOSRV_WEBSOCKET_IDLE_TIMEOUT` | `60s` | WebSocket 上游无数据超时 |
+
+## 测试
+
+```bash
+make test
+```
