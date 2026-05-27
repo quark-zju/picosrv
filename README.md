@@ -82,19 +82,16 @@ make install
 make install-systemd
 ```
 
-推荐使用 `systemctl edit` 覆盖 secret（无需修改主 service 文件）：
+创建本机 secret 配置文件：
 
 ```bash
-sudo systemctl edit picosrv.service
+sudo install -d -m 755 /etc/picosrv
+SECRET=$(openssl rand -base64 48)
+printf 'PICOSRV_HMAC_SECRET=%s\n' "$SECRET" | sudo tee /etc/picosrv/picosrv.env >/dev/null
+sudo chmod 600 /etc/picosrv/picosrv.env
 ```
 
-写入：
-
-```ini
-[Service]
-Environment=
-Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
-```
+`deploy/systemd/picosrv.service` 会从 `/etc/picosrv/picosrv.env` 读取 `PICOSRV_HMAC_SECRET`。程序会拒绝旧的占位值 `replace-with-long-random-secret`。
 
 也可以把常用步骤合并执行：
 

@@ -50,3 +50,15 @@ func TestSlogErrorLogEmitsJSON(t *testing.T) {
 		t.Fatalf("msg is missing or not a string: %v", entry["msg"])
 	}
 }
+
+func TestValidateHMACSecretRejectsPlaceholder(t *testing.T) {
+	if err := validateHMACSecret(placeholderHMACSecret); err == nil {
+		t.Fatal("expected placeholder secret to be rejected")
+	}
+}
+
+func TestValidateHMACSecretAllowsCustomSecret(t *testing.T) {
+	if err := validateHMACSecret("custom-long-random-secret"); err != nil {
+		t.Fatalf("expected custom secret to be allowed: %v", err)
+	}
+}

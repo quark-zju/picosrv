@@ -20,6 +20,8 @@ import (
 	"picosrv/internal/systemd"
 )
 
+const placeholderHMACSecret = "replace-with-long-random-secret"
+
 func main() {
 	var (
 		certDir                  = flag.String("cert-dir", getenv("PICOSRV_CERT_DIR", ""), "tls cert directory (e.g. /etc/picosrv/certs)")
@@ -34,6 +36,9 @@ func main() {
 
 	if *secret == "" {
 		exitErr(logger, errors.New("hmac secret is required (flag --hmac-secret or PICOSRV_HMAC_SECRET)"))
+	}
+	if err := validateHMACSecret(*secret); err != nil {
+		exitErr(logger, err)
 	}
 
 	reloadInterval, err := time.ParseDuration(*reloadIntervalRaw)
@@ -131,6 +136,13 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func validateHMACSecret(secret string) error {
+	if secret == placeholderHMACSecret {
+		return errors.New("hmac secret is still the default placeholder; generate a long random PICOSRV_HMAC_SECRET")
+	}
+	return nil
 }
 
 func exitErr(logger *slog.Logger, err error) {

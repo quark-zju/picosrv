@@ -10,7 +10,7 @@ Group=picosrv
 ExecStart=/usr/local/bin/picosrv \
   --cert-dir /etc/picosrv/certs \
   --tls-reload-interval 30s
-Environment=PICOSRV_HMAC_SECRET=replace-with-long-random-secret
+EnvironmentFile=/etc/picosrv/picosrv.env
 Restart=always
 RestartSec=2
 LimitNOFILE=65535
