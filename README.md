@@ -54,14 +54,10 @@ acme.sh --install-cert -d '*.'"$DOMAIN" \
   --fullchain-file /etc/picosrv/certs/$DOMAIN/fullchain.pem
 ```
 
-证书更新后 picosrv 会定时自动重载（见下文 `--tls-reload-interval`），无需手动重启。
-
 确保 picosrv 用户能读取证书：
 
 ```bash
-DOMAIN=example.com
-sudo setfacl -m u:picosrv:rx /etc/picosrv/certs
-sudo setfacl -R -m u:picosrv:rX /etc/picosrv/certs/$DOMAIN
+sudo setfacl -Rm u:picosrv:rX /etc/picosrv/certs
 ```
 
 ### 4. 启动
