@@ -60,10 +60,12 @@ acme.sh --install-cert -d '*.'"$DOMAIN" \
 确保 picosrv 用户能读取证书：
 
 ```bash
-sudo setfacl -m u:picosrv:rx /etc/picosrv/certs
-sudo setfacl -m u:picosrv:rx /etc/picosrv/certs/example.com
-sudo setfacl -m u:picosrv:r /etc/picosrv/certs/example.com/fullchain.pem
-sudo setfacl -m u:picosrv:r /etc/picosrv/certs/example.com/privkey.pem
+DOMAIN=example.com
+sudo setfacl \
+  -m u:picosrv:rx /etc/picosrv/certs \
+  -m u:picosrv:rx /etc/picosrv/certs/$DOMAIN \
+  -m u:picosrv:r /etc/picosrv/certs/$DOMAIN/fullchain.pem \
+  -m u:picosrv:r /etc/picosrv/certs/$DOMAIN/privkey.pem
 ```
 
 ### 4. 启动
