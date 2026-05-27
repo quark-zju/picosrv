@@ -44,9 +44,9 @@ make deploy
     └── privkey.pem
 ```
 
-TLS SNI 会从完整域名开始逐级向上查找证书目录。例如 `api.example.co.uk` 会依次尝试 `api.example.co.uk`、`example.co.uk`、`co.uk`，并用证书自身的 hostname 校验确认是否匹配。
+TLS SNI 会从完整域名开始逐级向上查找证书目录。例如 `api.example.co.uk` 会依次尝试 `api.example.co.uk`、`example.co.uk`、`co.uk`。
 
-如果使用 acme.sh，可将证书直接安装到 picosrv 的证书目录：
+如果使用 acme.sh 配置域名通配符证书，可将证书直接安装到 picosrv 的证书目录：
 
 ```bash
 DOMAIN=example.com
