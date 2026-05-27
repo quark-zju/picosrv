@@ -242,7 +242,6 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	proxy.Transport = s.transport
-	proxy.FlushInterval = -1
 	proxy.Director = nil
 	proxy.Rewrite = func(r *httputil.ProxyRequest) {
 		r.SetURL(u)

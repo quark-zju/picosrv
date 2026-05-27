@@ -179,7 +179,7 @@ func TestKnockCookieFlow(t *testing.T) {
 	}
 }
 
-func TestProxyStreamsResponseChunks(t *testing.T) {
+func TestProxyStreamsServerSentEvents(t *testing.T) {
 	const chunkCount = 4
 
 	type writeEvent struct {
@@ -194,9 +194,9 @@ func TestProxyStreamsResponseChunks(t *testing.T) {
 			t.Fatal("response writer does not support flushing")
 		}
 
-		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Type", "text/event-stream")
 		for i := 1; i <= chunkCount; i++ {
-			if _, err := w.Write([]byte("chunk-" + string(rune('0'+i)) + "\n")); err != nil {
+			if _, err := w.Write([]byte("data: chunk-" + string(rune('0'+i)) + "\n\n")); err != nil {
 				t.Fatalf("write chunk %d: %v", i, err)
 			}
 			flusher.Flush()
@@ -249,9 +249,12 @@ func TestProxyStreamsResponseChunks(t *testing.T) {
 		}
 		nextWrite = nil
 
-		want := "chunk-" + string(rune('0'+i)) + "\n"
+		want := "data: chunk-" + string(rune('0'+i)) + "\n"
 		if chunk != want {
 			t.Fatalf("unexpected chunk %d: got %q want %q", i, chunk, want)
+		}
+		if _, err := reader.ReadString('\n'); err != nil {
+			t.Fatalf("read event separator %d: %v", i, err)
 		}
 		if currentWrite.chunk != i {
 			t.Fatalf("out-of-order write event: got chunk %d want %d", currentWrite.chunk, i)
@@ -266,6 +269,27 @@ func TestProxyStreamsResponseChunks(t *testing.T) {
 			}
 			nextWrite = &event
 		}
+	}
+}
+
+func TestProxyUsesDefaultFlushInterval(t *testing.T) {
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionDeny}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxy, err := srv.proxyFor("http://127.0.0.1:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxy.FlushInterval != 0 {
+		t.Fatalf("expected default flush interval, got %v", proxy.FlushInterval)
 	}
 }
 
