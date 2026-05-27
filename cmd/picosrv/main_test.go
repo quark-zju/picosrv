@@ -62,3 +62,19 @@ func TestValidateHMACSecretAllowsCustomSecret(t *testing.T) {
 		t.Fatalf("expected custom secret to be allowed: %v", err)
 	}
 }
+
+func TestParsePositiveInt(t *testing.T) {
+	value, err := parsePositiveInt("65536")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != 65536 {
+		t.Fatalf("value = %d, want 65536", value)
+	}
+}
+
+func TestParsePositiveIntRejectsZero(t *testing.T) {
+	if _, err := parsePositiveInt("0"); err == nil {
+		t.Fatal("expected zero to be rejected")
+	}
+}

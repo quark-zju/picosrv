@@ -93,6 +93,7 @@ journalctl -u picosrv.service -f
 | `--tls-reload-interval` | `PICOSRV_TLS_RELOAD_INTERVAL` | `30s` | 证书热加载检查间隔 |
 | `--proxy-response-header-timeout` | `PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT` | `60s` | 等待上游响应头的超时 |
 | `--websocket-idle-timeout` | `PICOSRV_WEBSOCKET_IDLE_TIMEOUT` | `60s` | WebSocket 上游无数据超时 |
+| `--max-header-bytes` | `PICOSRV_MAX_HEADER_BYTES` | `65536` | 客户端请求头大小上限 |
 
 ## 测试
 
