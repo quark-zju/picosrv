@@ -608,18 +608,29 @@ func (s *tlsCertState) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 	if serverName == "" {
 		return nil, fmt.Errorf("invalid SNI server name %q", hello.ServerName)
 	}
-	domain := normalizeTopLevelDomain(hello.ServerName)
-	if domain == "" {
+	candidates := certificateDomainCandidates(serverName)
+	if len(candidates) == 0 {
 		return nil, fmt.Errorf("invalid SNI server name %q", hello.ServerName)
 	}
 
 	s.mu.RLock()
-	rec, ok := s.certs[domain]
+	for _, domain := range candidates {
+		if rec, ok := s.certs[domain]; ok {
+			s.mu.RUnlock()
+			if err := rec.matchesServerName(serverName); err != nil {
+				return nil, fmt.Errorf("certificate for domain %q does not cover %q: %w", domain, serverName, err)
+			}
+			return rec.cert, nil
+		}
+	}
 	s.mu.RUnlock()
-	if !ok {
+
+	var lastErr error
+	for _, domain := range candidates {
 		loaded, err := loadCertRecord(s.certDir, domain)
 		if err != nil {
-			return nil, fmt.Errorf("load certificate for domain %q: %w", domain, err)
+			lastErr = err
+			continue
 		}
 		if err := loaded.matchesServerName(serverName); err != nil {
 			return nil, fmt.Errorf("certificate for domain %q does not cover %q: %w", domain, serverName, err)
@@ -629,10 +640,10 @@ func (s *tlsCertState) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 		s.mu.Unlock()
 		return loaded.cert, nil
 	}
-	if err := rec.matchesServerName(serverName); err != nil {
-		return nil, fmt.Errorf("certificate for domain %q does not cover %q: %w", domain, serverName, err)
+	if lastErr != nil {
+		return nil, fmt.Errorf("load certificate for %q candidates %v: %w", serverName, candidates, lastErr)
 	}
-	return rec.cert, nil
+	return nil, fmt.Errorf("load certificate for %q candidates %v: no candidate domains", serverName, candidates)
 }
 
 func (s *tlsCertState) Run(ctx context.Context) {
@@ -736,16 +747,20 @@ func writeRawBadGateway(conn net.Conn) error {
 	return err
 }
 
-func normalizeTopLevelDomain(host string) string {
+func certificateDomainCandidates(host string) []string {
 	host = normalizeServerName(host)
 	if net.ParseIP(host) != nil {
-		return ""
+		return nil
 	}
 	parts := strings.Split(host, ".")
 	if len(parts) < 2 {
-		return ""
+		return nil
 	}
-	return parts[len(parts)-2] + "." + parts[len(parts)-1]
+	candidates := make([]string, 0, len(parts)-1)
+	for i := 0; i <= len(parts)-2; i++ {
+		candidates = append(candidates, strings.Join(parts[i:], "."))
+	}
+	return candidates
 }
 
 func normalizeServerName(host string) string {

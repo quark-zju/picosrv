@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -564,18 +565,22 @@ func TestWebSocketRejectsSecureUpstream(t *testing.T) {
 	}
 }
 
-func TestNormalizeTopLevelDomain(t *testing.T) {
-	cases := map[string]string{
-		"example.com":      "example.com",
-		"api.example.com":  "example.com",
-		"api.example.com.": "example.com",
-		"127.0.0.1":        "",
-		"localhost":        "",
+func TestCertificateDomainCandidates(t *testing.T) {
+	cases := map[string][]string{
+		"example.com":          {"example.com"},
+		"api.example.com":      {"api.example.com", "example.com"},
+		"api.example.com.":     {"api.example.com", "example.com"},
+		"a.b.example.co.uk":    {"a.b.example.co.uk", "b.example.co.uk", "example.co.uk", "co.uk"},
+		"127.0.0.1":            nil,
+		"localhost":            nil,
+		"api.example.com:8443": {"api.example.com", "example.com"},
+		"[2001:db8::1]:443":    nil,
+		"2001:db8::1":          nil,
 	}
 	for in, want := range cases {
-		got := normalizeTopLevelDomain(in)
-		if got != want {
-			t.Fatalf("normalizeTopLevelDomain(%q)=%q want %q", in, got, want)
+		got := certificateDomainCandidates(in)
+		if !slices.Equal(got, want) {
+			t.Fatalf("certificateDomainCandidates(%q)=%v want %v", in, got, want)
 		}
 	}
 }
@@ -595,7 +600,7 @@ func TestClientIPFromRemoteAddr(t *testing.T) {
 	}
 }
 
-func TestTLSCertStateLookupByTopLevelDomain(t *testing.T) {
+func TestTLSCertStateLookupByParentDomain(t *testing.T) {
 	tmpDir := t.TempDir()
 	domainDir := filepath.Join(tmpDir, "example.com")
 	if err := os.MkdirAll(domainDir, 0o755); err != nil {
@@ -617,6 +622,36 @@ func TestTLSCertStateLookupByTopLevelDomain(t *testing.T) {
 		t.Fatal(err)
 	}
 	cert, err := state.GetCertificate(&tls.ClientHelloInfo{ServerName: "api.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert == nil || len(cert.Certificate) == 0 {
+		t.Fatal("expected certificate bytes")
+	}
+}
+
+func TestTLSCertStateLookupByParentDomainCandidate(t *testing.T) {
+	tmpDir := t.TempDir()
+	domainDir := filepath.Join(tmpDir, "example.co.uk")
+	if err := os.MkdirAll(domainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	certPEM, keyPEM, err := generateSelfSignedCert([]string{"example.co.uk", "*.example.co.uk"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "fullchain.pem"), certPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "privkey.pem"), keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := newTLSCertState(tmpDir, time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := state.GetCertificate(&tls.ClientHelloInfo{ServerName: "api.example.co.uk"})
 	if err != nil {
 		t.Fatal(err)
 	}

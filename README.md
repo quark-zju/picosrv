@@ -44,6 +44,8 @@ make deploy
     └── privkey.pem
 ```
 
+TLS SNI 会从完整域名开始逐级向上查找证书目录。例如 `api.example.co.uk` 会依次尝试 `api.example.co.uk`、`example.co.uk`、`co.uk`，并用证书自身的 hostname 校验确认是否匹配。
+
 如果使用 acme.sh，可将证书直接安装到 picosrv 的证书目录：
 
 ```bash
@@ -75,7 +77,7 @@ journalctl -u picosrv.service -f
 ## 运行机制
 
 - **监听方式**：进程不直接绑定端口，由 systemd 通过 socket activation 传入已监听的 socket，因此重启服务不会丢失连接。默认监听 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加一个 `ListenStream=80` 的 socket 文件。
-- **证书加载**：根据 TLS SNI 取顶级域名，从 `cert-dir` 下对应子目录加载证书。已使用过的域名会按 `tls-reload-interval` 定时重载（默认 30 秒），无需重启。
+- **证书加载**：根据 TLS SNI 从完整域名开始逐级向上查找 `cert-dir` 下的证书目录。已使用过的证书目录会按 `tls-reload-interval` 定时重载（默认 30 秒），无需重启。
 - **访问控制**：请求经过策略模块，根据 Host、Path、UA、Query、Cookie 等信息返回决策。默认策略仅作示例，生产环境通过 `internal/config/custom_local.go` 覆盖。决策类型包括：允许代理、允许文件服务、签发敲门 Cookie 并重定向、拒绝。
 - **敲门 Cookie**：`HttpOnly`、`Secure`、`SameSite=Lax`，默认有效期 2 年。
 - **日志**：统一输出 JSON 格式，便于 journald / Loki / ELK 等工具采集。
