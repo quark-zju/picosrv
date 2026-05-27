@@ -278,6 +278,13 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	if err != nil {
 		return false, err
 	}
+	switch u.Scheme {
+	case "http", "ws":
+	case "https", "wss":
+		return false, fmt.Errorf("websocket upstream scheme %q is not supported", u.Scheme)
+	default:
+		return false, fmt.Errorf("unsupported websocket upstream scheme %q", u.Scheme)
+	}
 	backendConn, err := s.transport.DialContext(r.Context(), "tcp", u.Host)
 	if err != nil {
 		return false, err

@@ -451,6 +451,43 @@ func TestWebSocketTunnel(t *testing.T) {
 	}
 }
 
+func TestWebSocketRejectsSecureUpstream(t *testing.T) {
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: "wss://backend.example.local/ws", AllowReason: "test"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+
+	proxyURL, err := url.Parse(proxyServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsURL := "ws://" + proxyURL.Host + "/ws"
+
+	hdr := http.Header{}
+	hdr.Set("Host", "example.local")
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, hdr)
+	if err == nil {
+		conn.Close()
+		t.Fatal("expected websocket dial to fail")
+	}
+	if resp == nil {
+		t.Fatalf("expected 502 response, got dial error without response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", resp.StatusCode)
+	}
+}
+
 func TestNormalizeTopLevelDomain(t *testing.T) {
 	cases := map[string]string{
 		"example.com":      "example.com",
