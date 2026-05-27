@@ -74,7 +74,7 @@ sudo systemctl enable --now picosrv.socket
 查看日志：
 
 ```bash
-journalctl -u picosrv.service -f -o cat
+journalctl -u picosrv.service -f
 ```
 
 ## 运行机制
