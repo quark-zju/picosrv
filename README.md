@@ -44,7 +44,18 @@ make deploy
     └── privkey.pem
 ```
 
-如果使用 acme.sh，证书更新后可通过 `systemctl restart picosrv` 触发热加载（也支持定时自动检测，见下文标志）。
+如果使用 acme.sh，可将证书直接安装到 picosrv 的证书目录：
+
+```bash
+DOMAIN=example.com
+sudo install -d -m 755 /etc/picosrv/certs/$DOMAIN
+acme.sh --install-cert -d '*.'"$DOMAIN" \
+  --key-file /etc/picosrv/certs/$DOMAIN/privkey.pem \
+  --fullchain-file /etc/picosrv/certs/$DOMAIN/fullchain.pem \
+  --reloadcmd "systemctl restart picosrv"
+```
+
+证书更新后通过 `--reloadcmd` 自动重载，也支持定时自动检测（见下文 `--tls-reload-interval`）。
 
 确保 picosrv 用户能读取证书：
 
