@@ -51,11 +51,10 @@ DOMAIN=example.com
 sudo install -d -m 755 /etc/picosrv/certs/$DOMAIN
 acme.sh --install-cert -d '*.'"$DOMAIN" \
   --key-file /etc/picosrv/certs/$DOMAIN/privkey.pem \
-  --fullchain-file /etc/picosrv/certs/$DOMAIN/fullchain.pem \
-  --reloadcmd "systemctl restart picosrv"
+  --fullchain-file /etc/picosrv/certs/$DOMAIN/fullchain.pem
 ```
 
-证书更新后通过 `--reloadcmd` 自动重载，也支持定时自动检测（见下文 `--tls-reload-interval`）。
+证书更新后 picosrv 会定时自动重载（见下文 `--tls-reload-interval`），无需手动重启。
 
 确保 picosrv 用户能读取证书：
 
