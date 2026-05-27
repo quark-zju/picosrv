@@ -80,11 +80,11 @@ journalctl -u picosrv.service -f
 - **敲门 Cookie**：`HttpOnly`、`Secure`、`SameSite=Lax`，默认有效期 2 年。
 - **日志**：统一输出 JSON 格式，便于 journald / Loki / ELK 等工具采集。
 
-## 命令行标志
+## 命令行参数
 
 所有标志均可通过环境变量设置。
 
-| 标志 | 环境变量 | 默认值 | 说明 |
+| 参数 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
 | `--hmac-secret` | `PICOSRV_HMAC_SECRET` | — | **必填**。HMAC 密钥 |
 | `--cert-dir` | `PICOSRV_CERT_DIR` | — | 证书根目录，如 `/etc/picosrv/certs` |
