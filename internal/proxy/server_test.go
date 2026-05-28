@@ -151,7 +151,8 @@ func TestKnockCookieFlow(t *testing.T) {
 	req2, _ := http.NewRequest(http.MethodGet, ts.URL+"/app", nil)
 	req2.Host = "example.local"
 	req2.AddCookie(knockCookie)
-	req2.Header.Set("X-Test-Leak", "should-be-removed")
+	req2.Header.Set("X-Test-Compat", "should-be-forwarded")
+	req2.Header.Set("X-Middleware-Subrequest", "should-be-removed")
 	req2.Header.Set("X-Forwarded-For", "198.51.100.9")
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
@@ -163,17 +164,17 @@ func TestKnockCookieFlow(t *testing.T) {
 	}
 	select {
 	case hdr := <-headersSeen:
-		if got := hdr.Get("x-middleware-subrequest"); got != "" {
+		if got := hdr.Get("X-Middleware-Subrequest"); got != "" {
 			t.Fatalf("expected empty x-middleware-subrequest, got %q", got)
+		}
+		if got := hdr.Get("X-Test-Compat"); got != "should-be-forwarded" {
+			t.Fatalf("expected X-Test-Compat to be forwarded, got %q", got)
 		}
 		if hdr.Get("X-Forwarded-Host") == "" {
 			t.Fatal("missing X-Forwarded-Host")
 		}
 		if got := hdr.Values("X-Forwarded-For"); len(got) != 1 || strings.Contains(got[0], "198.51.100.9") {
 			t.Fatalf("expected proxy-generated X-Forwarded-For only, got %q", got)
-		}
-		if got := hdr.Get("X-Test-Leak"); got != "" {
-			t.Fatalf("expected X-Test-Leak to be removed, got %q", got)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not observe upstream headers")

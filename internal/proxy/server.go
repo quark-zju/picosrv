@@ -246,7 +246,7 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 	proxy.Rewrite = func(r *httputil.ProxyRequest) {
 		r.SetURL(u)
 		r.Out.Host = stripDefaultPort(r.In.Host)
-		clearNonForwardedXHeaders(r.Out.Header)
+		clearMiddlewareHeaders(r.Out.Header)
 		r.SetXForwarded()
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -312,7 +312,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	clone.URL.Scheme = "http"
 	clone.URL.Host = u.Host
 	clone.Host = stripDefaultPort(r.Host)
-	clearNonForwardedXHeaders(clone.Header)
+	clearMiddlewareHeaders(clone.Header)
 	clearForwardedHeaders(clone.Header)
 	clone.Header.Set("X-Forwarded-Host", stripDefaultPort(r.Host))
 	clone.Header.Set("X-Forwarded-Proto", forwardedProto(r))
@@ -440,16 +440,11 @@ func appendXForwardedFor(h http.Header, remoteAddr string) {
 	h.Set("X-Forwarded-For", ip)
 }
 
-func clearNonForwardedXHeaders(h http.Header) {
+func clearMiddlewareHeaders(h http.Header) {
 	for k := range h {
-		if !strings.HasPrefix(strings.ToLower(k), "x-") {
-			continue
+		if strings.HasPrefix(strings.ToLower(k), "x-middleware-") {
+			h.Del(k)
 		}
-		lk := strings.ToLower(k)
-		if lk == "x-forwarded-for" || lk == "x-forwarded-host" || lk == "x-forwarded-proto" {
-			continue
-		}
-		h.Del(k)
 	}
 }
 
