@@ -154,6 +154,16 @@ func TestKnockCookieFlow(t *testing.T) {
 	req2.Header.Set("X-Test-Compat", "should-be-forwarded")
 	req2.Header.Set("X-Middleware-Subrequest", "should-be-removed")
 	req2.Header.Set("X-Forwarded-For", "198.51.100.9")
+	req2.Header.Set("Forwarded", "for=198.51.100.9;proto=https")
+	req2.Header.Set("X-Real-IP", "198.51.100.9")
+	req2.Header.Set("X-Original-URL", "/admin")
+	req2.Header.Set("X-Rewrite-URL", "/admin")
+	req2.Header.Set("X-Forwarded-Prefix", "/internal")
+	req2.Header.Set("X-HTTP-Method-Override", "DELETE")
+	req2.Header.Set("X-Accel-Redirect", "/private")
+	req2.Header.Set("X-Sendfile", "/private/file")
+	req2.Header.Set("X-Remote-User", "admin")
+	req2.Header.Set("X-Auth-Request-User", "admin")
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		t.Fatal(err)
@@ -166,6 +176,22 @@ func TestKnockCookieFlow(t *testing.T) {
 	case hdr := <-headersSeen:
 		if got := hdr.Get("X-Middleware-Subrequest"); got != "" {
 			t.Fatalf("expected empty x-middleware-subrequest, got %q", got)
+		}
+		for _, name := range []string{
+			"Forwarded",
+			"X-Real-IP",
+			"X-Original-URL",
+			"X-Rewrite-URL",
+			"X-Forwarded-Prefix",
+			"X-HTTP-Method-Override",
+			"X-Accel-Redirect",
+			"X-Sendfile",
+			"X-Remote-User",
+			"X-Auth-Request-User",
+		} {
+			if got := hdr.Get(name); got != "" {
+				t.Fatalf("expected %s to be removed, got %q", name, got)
+			}
 		}
 		if got := hdr.Get("X-Test-Compat"); got != "should-be-forwarded" {
 			t.Fatalf("expected X-Test-Compat to be forwarded, got %q", got)

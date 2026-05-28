@@ -246,7 +246,7 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 	proxy.Rewrite = func(r *httputil.ProxyRequest) {
 		r.SetURL(u)
 		r.Out.Host = stripDefaultPort(r.In.Host)
-		clearMiddlewareHeaders(r.Out.Header)
+		clearUnsafeRequestHeaders(r.Out.Header)
 		r.SetXForwarded()
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -312,7 +312,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	clone.URL.Scheme = "http"
 	clone.URL.Host = u.Host
 	clone.Host = stripDefaultPort(r.Host)
-	clearMiddlewareHeaders(clone.Header)
+	clearUnsafeRequestHeaders(clone.Header)
 	clearForwardedHeaders(clone.Header)
 	clone.Header.Set("X-Forwarded-Host", stripDefaultPort(r.Host))
 	clone.Header.Set("X-Forwarded-Proto", forwardedProto(r))
@@ -440,12 +440,49 @@ func appendXForwardedFor(h http.Header, remoteAddr string) {
 	h.Set("X-Forwarded-For", ip)
 }
 
-func clearMiddlewareHeaders(h http.Header) {
+var unsafeRequestHeaderNames = map[string]struct{}{
+	"forwarded":              {},
+	"x-accel-redirect":       {},
+	"x-client-ip":            {},
+	"x-forwarded-for":        {},
+	"x-forwarded-host":       {},
+	"x-forwarded-port":       {},
+	"x-forwarded-prefix":     {},
+	"x-forwarded-proto":      {},
+	"x-forwarded-scheme":     {},
+	"x-forwarded-server":     {},
+	"x-forwarded-ssl":        {},
+	"x-http-method-override": {},
+	"x-method-override":      {},
+	"x-original-method":      {},
+	"x-original-url":         {},
+	"x-real-ip":              {},
+	"x-rewrite-url":          {},
+	"x-sendfile":             {},
+}
+
+var unsafeRequestHeaderPrefixes = []string{
+	"x-auth-request-",
+	"x-middleware-",
+	"x-remote-",
+}
+
+func clearUnsafeRequestHeaders(h http.Header) {
 	for k := range h {
-		if strings.HasPrefix(strings.ToLower(k), "x-middleware-") {
+		lk := strings.ToLower(k)
+		if _, ok := unsafeRequestHeaderNames[lk]; ok || hasAnyPrefix(lk, unsafeRequestHeaderPrefixes) {
 			h.Del(k)
 		}
 	}
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func clearForwardedHeaders(h http.Header) {
