@@ -36,12 +36,12 @@ func (s staticEvaluator) Evaluate(ctx config.Context, _ *http.Request, hasValidC
 	return s.fn(ctx, hasValidCookie)
 }
 
-type knownHostEvaluator struct {
+type allowedHTTPHostEvaluator struct {
 	staticEvaluator
 	hosts map[string]bool
 }
 
-func (e knownHostEvaluator) IsKnownHost(host string) bool {
+func (e allowedHTTPHostEvaluator) IsAllowedHTTPHost(host string) bool {
 	return e.hosts[host]
 }
 
@@ -113,7 +113,7 @@ func TestCookieValidationIsLazy(t *testing.T) {
 
 func TestRedirectHandlerRejectsUnknownHost(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: knownHostEvaluator{
+		Evaluator: allowedHTTPHostEvaluator{
 			staticEvaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
 				return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
 			}},
@@ -139,7 +139,7 @@ func TestRedirectHandlerRejectsUnknownHost(t *testing.T) {
 
 func TestRedirectHandlerAllowsKnownHost(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: knownHostEvaluator{
+		Evaluator: allowedHTTPHostEvaluator{
 			staticEvaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
 				return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
 			}},

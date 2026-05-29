@@ -133,7 +133,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) RedirectHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := stripDefaultPort(r.Host)
-		if !s.isKnownRedirectHost(host, r) {
+		if !s.isAllowedRedirectHost(host, r) {
 			http.NotFound(w, r)
 			return
 		}
@@ -142,9 +142,9 @@ func (s *Server) RedirectHandler() http.Handler {
 	})
 }
 
-func (s *Server) isKnownRedirectHost(host string, r *http.Request) bool {
-	if validator, ok := s.evaluator.(config.HostValidator); ok {
-		return validator.IsKnownHost(host)
+func (s *Server) isAllowedRedirectHost(host string, r *http.Request) bool {
+	if validator, ok := s.evaluator.(config.HTTPHostValidator); ok {
+		return validator.IsAllowedHTTPHost(host)
 	}
 	ctx := config.Context{Host: host, Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
 	decision := s.evaluator.Evaluate(ctx, r, func() bool { return false })
