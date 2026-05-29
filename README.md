@@ -1,6 +1,6 @@
 # picosrv
 
-轻量反向代理，基于 systemd socket activation，支持 HTTPS、按域名转发或提供静态文件、WebSocket、敲门访问控制。
+轻量反向代理，基于 systemd socket activation，支持 HTTPS、按域名转发或提供静态文件、LLM API 网关、WebSocket、敲门访问控制。
 
 ## 快速上手
 
@@ -10,18 +10,20 @@
 make config
 ```
 
-首次运行会从 `examples/custom_local.go.example` 复制模板到 `internal/config/custom_local.go`，并打开编辑器。编辑其中的 `hostConfigs` 即可定义你的域名规则——每个域名支持两种模式：
+首次运行会从 `examples/custom_local.go.example` 复制模板到 `internal/config/custom_local.go`，并打开编辑器。编辑其中的 `hostConfigs` 即可定义你的域名规则——每个域名支持三种模式：
 
-- **反向代理** (`Upstream`)：将请求转发到指定的 HTTP 上游服务。
+- **反向代理** (`Upstream`)：将请求转发到指定的本地 HTTP 上游服务。
 - **静态文件** (`RootDir`)：以只读方式提供本地目录下的文件（不能通过 `..` 或越界符号链接跳出该目录）。
+- **LLM 网关** (`LLMGateway`)：按请求体中的模型名称自动路由到不同 AI API 提供商，并注入对应的 API Key（详见 `examples/custom_local.go.example`）。
 
 示例：
 
 ```go
 var hostConfigs = map[string]hostConfig{
-    "app.example.com":    {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
-    "public.example.com": {Upstream: "http://127.0.0.1:8082", NeedKnock: false},
-    "files.example.com":  {RootDir: "/srv/files.example.com", NeedKnock: false},
+    "app.example.com":     {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
+    "public.example.com":  {Upstream: "http://127.0.0.1:8082", NeedKnock: false},
+    "files.example.com":   {RootDir: "/srv/files.example.com", NeedKnock: false},
+    "llm-lan.example.com": {LLMGateway: true, NeedKnock: false},
 }
 ```
 
@@ -78,7 +80,7 @@ journalctl -u picosrv.service -f
 
 - **监听方式**：进程不直接绑定端口，由 systemd 通过 socket activation 传入已监听的 socket，因此重启服务不会丢失连接。默认监听 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加一个 `ListenStream=80` 的 socket 文件。
 - **证书加载**：根据 TLS SNI 从完整域名开始逐级向上查找 `cert-dir` 下的证书目录。已使用过的证书目录会按 `tls-reload-interval` 定时重载（默认 30 秒），无需重启。
-- **访问控制**：请求经过策略模块，根据 Host、Path、UA、Query、Cookie 等信息返回决策。默认策略仅作示例，生产环境通过 `internal/config/custom_local.go` 覆盖。决策类型包括：允许代理、允许文件服务、签发敲门 Cookie 并重定向、拒绝。
+- **访问控制**：请求经过策略模块，根据 Host、Path、UA、Query、Cookie 等信息返回决策。默认策略仅作示例，生产环境通过 `internal/config/custom_local.go` 覆盖。决策类型包括：反代到私有后端（保留入口 Host）、反代到外部 API（使用上游 Host，适合 LLM 网关）、文件服务、签发敲门 Cookie 并重定向、拒绝。
 - **敲门 Cookie**：`HttpOnly`、`Secure`、`SameSite=Lax`，默认有效期 2 年。
 - **日志**：统一输出 JSON 格式，便于 journald / Loki / ELK 等工具采集。
 
