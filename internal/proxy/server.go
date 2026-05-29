@@ -229,6 +229,23 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		rw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
 		proxy.ServeHTTP(rw, r)
 		status = rw.status
+	case config.DecisionAllowExternalProxy:
+		upstream = decision.Upstream
+		if wsUpgrade {
+			status = http.StatusBadRequest
+			http.Error(w, "websocket external proxy is not supported", status)
+			break
+		}
+		proxy, err := s.externalProxyFor(decision.Upstream)
+		if err != nil {
+			status = http.StatusBadGateway
+			http.Error(w, "bad gateway", status)
+			s.logger.Error("build external proxy", "error", err)
+			break
+		}
+		rw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
+		proxy.ServeHTTP(rw, r)
+		status = rw.status
 	case config.DecisionAllowFiles:
 		upstream = decision.RootDir
 		handler, err := s.fileServerFor(decision.RootDir)
@@ -277,7 +294,23 @@ func (s *Server) releaseWebSocket() {
 }
 
 func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
-	if proxy, ok := s.proxyByHost.Load(target); ok {
+	return s.reverseProxyFor("internal:"+target, target, func(r *httputil.ProxyRequest, u *url.URL) {
+		r.SetURL(u)
+		r.Out.Host = stripDefaultPort(r.In.Host)
+		clearUnsafeRequestHeaders(r.Out.Header)
+		r.SetXForwarded()
+	})
+}
+
+func (s *Server) externalProxyFor(target string) (*httputil.ReverseProxy, error) {
+	return s.reverseProxyFor("external:"+target, target, func(r *httputil.ProxyRequest, u *url.URL) {
+		r.SetURL(u)
+		clearUnsafeRequestHeaders(r.Out.Header)
+	})
+}
+
+func (s *Server) reverseProxyFor(cacheKey string, target string, rewrite func(*httputil.ProxyRequest, *url.URL)) (*httputil.ReverseProxy, error) {
+	if proxy, ok := s.proxyByHost.Load(cacheKey); ok {
 		return proxy.(*httputil.ReverseProxy), nil
 	}
 
@@ -290,17 +323,14 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 	proxy.Transport = s.transport
 	proxy.Director = nil
 	proxy.Rewrite = func(r *httputil.ProxyRequest) {
-		r.SetURL(u)
-		r.Out.Host = stripDefaultPort(r.In.Host)
-		clearUnsafeRequestHeaders(r.Out.Header)
-		r.SetXForwarded()
+		rewrite(r, u)
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
 		s.logger.Error("reverse proxy error", "error", err, "host", r.Host, "path", r.URL.Path)
 	}
 
-	actual, _ := s.proxyByHost.LoadOrStore(target, proxy)
+	actual, _ := s.proxyByHost.LoadOrStore(cacheKey, proxy)
 	return actual.(*httputil.ReverseProxy), nil
 }
 

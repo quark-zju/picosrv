@@ -8,7 +8,15 @@ type DecisionKind int
 
 const (
 	DecisionDeny DecisionKind = iota
+	// DecisionAllowProxy forwards to a private backend while preserving the
+	// original inbound Host header. Use this for normal site reverse proxying
+	// where the backend expects the public virtual host.
 	DecisionAllowProxy
+	// DecisionAllowExternalProxy forwards to an external API upstream using the
+	// upstream URL's Host header. Use this for public API providers such as
+	// https://api.openai.com or https://openrouter.ai, where sending the inbound
+	// LAN/public gateway Host would be incorrect.
+	DecisionAllowExternalProxy
 	DecisionAllowFiles
 	DecisionIssueCookieAndRedirect
 )

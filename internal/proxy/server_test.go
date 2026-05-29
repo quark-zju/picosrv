@@ -288,6 +288,165 @@ func TestKnockCookieFlow(t *testing.T) {
 	}
 }
 
+func TestAllowProxyPreservesInboundHost(t *testing.T) {
+	hostSeen := make(chan string, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hostSeen <- r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.CloseIdleConnections()
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxyServer.URL+"/v1/chat/completions", nil)
+	req.Host = "private.example.local"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	select {
+	case got := <-hostSeen:
+		if got != "private.example.local" {
+			t.Fatalf("upstream Host = %q, want inbound host", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not observe upstream request")
+	}
+}
+
+func TestAllowExternalProxyUsesUpstreamHostAndForwardsRequest(t *testing.T) {
+	type observedRequest struct {
+		host          string
+		path          string
+		rawQuery      string
+		authorization string
+		headers       http.Header
+	}
+	seen := make(chan observedRequest, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- observedRequest{
+			host:          r.Host,
+			path:          r.URL.Path,
+			rawQuery:      r.URL.RawQuery,
+			authorization: r.Header.Get("Authorization"),
+			headers:       r.Header.Clone(),
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	upstreamURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowExternalProxy, Upstream: upstream.URL, Reason: "test"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.CloseIdleConnections()
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, proxyServer.URL+"/v1/chat/completions?model=gpt-4.1&stream=true", strings.NewReader("{}"))
+	req.Host = "llm-lan.example.com"
+	req.Header.Set("Authorization", "Bearer upstream-key")
+	req.Header.Set("X-Forwarded-Host", "llm-lan.example.com")
+	req.Header.Set("X-Forwarded-For", "198.51.100.9")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	select {
+	case got := <-seen:
+		if got.host != upstreamURL.Host {
+			t.Fatalf("upstream Host = %q, want %q", got.host, upstreamURL.Host)
+		}
+		if got.path != "/v1/chat/completions" {
+			t.Fatalf("path = %q", got.path)
+		}
+		if got.rawQuery != "model=gpt-4.1&stream=true" {
+			t.Fatalf("raw query = %q", got.rawQuery)
+		}
+		if got.authorization != "Bearer upstream-key" {
+			t.Fatalf("Authorization = %q", got.authorization)
+		}
+		for _, name := range []string{"X-Forwarded-Host", "X-Forwarded-For", "X-Forwarded-Proto"} {
+			if value := got.headers.Get(name); value != "" {
+				t.Fatalf("expected %s to be empty, got %q", name, value)
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not observe upstream request")
+	}
+}
+
+func TestAllowExternalProxyRejectsWebSocketUpgrade(t *testing.T) {
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowExternalProxy, Upstream: "http://127.0.0.1:1", Reason: "test"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+
+	proxyURL, err := url.Parse(proxyServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsURL := "ws://" + proxyURL.Host + "/v1/realtime"
+
+	hdr := http.Header{}
+	hdr.Set("Host", "llm-lan.example.com")
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, hdr)
+	if err == nil {
+		conn.Close()
+		t.Fatal("expected websocket dial to fail")
+	}
+	if resp == nil {
+		t.Fatalf("expected 400 response, got dial error without response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
 func TestProxyStreamsServerSentEvents(t *testing.T) {
 	const chunkCount = 4
 
