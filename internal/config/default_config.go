@@ -21,28 +21,28 @@ func NewEvaluator() Evaluator {
 func (defaultEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie func() bool) Decision {
 	if hasValidCookie() {
 		if upstream, ok := defaultHostUpstreams[ctx.Host]; ok {
-			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "cookie"}
+			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, Reason: "cookie"}
 		}
-		return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
+		return Decision{Kind: DecisionDeny, Reason: "unknown_host"}
 	}
 
 	if upstream, ok := defaultHostUpstreams[ctx.Host]; ok {
 		if strings.HasPrefix(ctx.Path, "/public") {
-			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "public_path"}
+			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, Reason: "public_path"}
 		}
 		// Demo-only shortcut: this default config is an example baseline.
 		// Real deployments should replace this file (or use custom build tag policy)
 		// and avoid trusting User-Agent alone for access control decisions.
 		if strings.HasPrefix(strings.ToLower(ctx.UA), "healthcheck") {
-			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, AllowReason: "ua_whitelist"}
+			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, Reason: "ua_whitelist"}
 		}
 		if ctx.Path == "/knock" {
-			return Decision{Kind: DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, AllowReason: "knock"}
+			return Decision{Kind: DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, Reason: "knock"}
 		}
-		return Decision{Kind: DecisionDeny, AllowReason: "policy"}
+		return Decision{Kind: DecisionDeny, Reason: "policy"}
 	}
 
-	return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
+	return Decision{Kind: DecisionDeny, Reason: "unknown_host"}
 }
 
 func (defaultEvaluator) IsAllowedHTTPHost(host string) bool {

@@ -17,7 +17,7 @@ type Decision struct {
 	Kind         DecisionKind
 	Upstream     string
 	RootDir      string
-	AllowReason  string
+	Reason       string
 	RedirectPath string
 	SetCookie    bool
 }

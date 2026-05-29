@@ -54,7 +54,7 @@ type flushRecorder struct {
 func TestDenyByDefault(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
+			return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -84,7 +84,7 @@ func TestCookieValidationIsLazy(t *testing.T) {
 		Evaluator: staticEvaluator{fn: func(_ config.Context, hasValidCookie func() bool) config.Decision {
 			calls++
 			// Deliberately never call hasValidCookie for this path.
-			return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
+			return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -115,7 +115,7 @@ func TestRedirectHandlerRejectsUnknownHost(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: allowedHTTPHostEvaluator{
 			staticEvaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-				return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
+				return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
 			}},
 			hosts: map[string]bool{"example.local": true},
 		},
@@ -141,7 +141,7 @@ func TestRedirectHandlerAllowsKnownHost(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: allowedHTTPHostEvaluator{
 			staticEvaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-				return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
+				return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
 			}},
 			hosts: map[string]bool{"example.local": true},
 		},
@@ -178,9 +178,9 @@ func TestKnockCookieFlow(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, hasValidCookie func() bool) config.Decision {
 			if hasValidCookie() {
-				return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "cookie"}
+				return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "cookie"}
 			}
-			return config.Decision{Kind: config.DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, AllowReason: "knock"}
+			return config.Decision{Kind: config.DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, Reason: "knock"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -319,7 +319,7 @@ func TestProxyStreamsServerSentEvents(t *testing.T) {
 
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "stream"}
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "stream"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -448,7 +448,7 @@ func TestStaticFileServing(t *testing.T) {
 
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowFiles, RootDir: tmpDir, AllowReason: "files"}
+			return config.Decision{Kind: config.DecisionAllowFiles, RootDir: tmpDir, Reason: "files"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -492,7 +492,7 @@ func TestStaticFileServingRejectsParentTraversal(t *testing.T) {
 
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowFiles, RootDir: rootDir, AllowReason: "files"}
+			return config.Decision{Kind: config.DecisionAllowFiles, RootDir: rootDir, Reason: "files"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -537,7 +537,7 @@ func TestWebSocketTunnel(t *testing.T) {
 
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "test"}
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -621,7 +621,7 @@ func TestWebSocketDrainsHijackBufferedClientData(t *testing.T) {
 
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: "http://" + backend.Addr().String(), AllowReason: "test"}
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: "http://" + backend.Addr().String(), Reason: "test"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -677,7 +677,7 @@ func TestWebSocketConnectionLimit(t *testing.T) {
 
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "test"}
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
 		}},
 		HMACSecret:              "secret",
 		Logger:                  slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -770,7 +770,7 @@ func TestWebSocketUpstreamIdleTimeout(t *testing.T) {
 
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "test"}
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
 		}},
 		HMACSecret:           "secret",
 		Logger:               slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -811,7 +811,7 @@ func TestWebSocketUpstreamIdleTimeout(t *testing.T) {
 func TestWebSocketRejectsSecureUpstream(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: "wss://backend.example.local/ws", AllowReason: "test"}
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: "wss://backend.example.local/ws", Reason: "test"}
 		}},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),

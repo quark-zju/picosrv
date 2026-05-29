@@ -148,7 +148,7 @@ func (s *Server) isAllowedRedirectHost(host string, r *http.Request) bool {
 	}
 	ctx := config.Context{Host: host, Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
 	decision := s.evaluator.Evaluate(ctx, r, func() bool { return false })
-	return decision.AllowReason != "unknown_host"
+	return decision.Reason != "unknown_host"
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +255,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"status", status,
 		"upstream", upstream,
 		"latency_ms", time.Since(start).Milliseconds(),
-		"allow_reason", decision.AllowReason,
+		"decision_reason", decision.Reason,
 		"ws_upgrade", wsUpgrade,
 	)
 }

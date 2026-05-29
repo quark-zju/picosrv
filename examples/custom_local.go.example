@@ -31,12 +31,12 @@ type customEvaluator struct{}
 func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie func() bool) Decision {
 	cfg, ok := hostConfigs[ctx.Host]
 	if !ok {
-		return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
+		return Decision{Kind: DecisionDeny, Reason: "unknown_host"}
 	}
 
 	// Knock always works.
 	if ctx.Path == "/knock" {
-		return Decision{Kind: DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, AllowReason: "knock"}
+		return Decision{Kind: DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, Reason: "knock"}
 	}
 
 	if cfg.NeedKnock {
@@ -47,7 +47,7 @@ func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie fun
 		// if isNoKnockPath(ctx.Path) || isNoKnockUA(ctx.UA) {
 		// 	return allowHost(cfg, "no_knock_bypass")
 		// }
-		return Decision{Kind: DecisionDeny, AllowReason: "policy"}
+		return Decision{Kind: DecisionDeny, Reason: "policy"}
 	}
 
 	return allowHost(cfg, "public_host")
@@ -55,9 +55,9 @@ func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie fun
 
 func allowHost(cfg hostConfig, reason string) Decision {
 	if cfg.RootDir != "" {
-		return Decision{Kind: DecisionAllowFiles, RootDir: cfg.RootDir, AllowReason: reason}
+		return Decision{Kind: DecisionAllowFiles, RootDir: cfg.RootDir, Reason: reason}
 	}
-	return Decision{Kind: DecisionAllowProxy, Upstream: cfg.Upstream, AllowReason: reason}
+	return Decision{Kind: DecisionAllowProxy, Upstream: cfg.Upstream, Reason: reason}
 }
 
 // Uncomment to enable bypass helpers.
