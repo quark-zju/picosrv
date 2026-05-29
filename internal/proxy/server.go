@@ -160,6 +160,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 					Name:     cookieName,
 					Value:    value,
 					Path:     "/",
+					MaxAge:   int(knockCookieTTL.Seconds()),
 					HttpOnly: true,
 					Secure:   true,
 					SameSite: http.SameSiteLaxMode,

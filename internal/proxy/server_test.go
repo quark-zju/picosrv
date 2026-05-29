@@ -147,6 +147,9 @@ func TestKnockCookieFlow(t *testing.T) {
 	if knockCookie == nil {
 		t.Fatal("missing knock cookie")
 	}
+	if knockCookie.MaxAge != int(knockCookieTTL.Seconds()) {
+		t.Fatalf("knock cookie MaxAge = %d, want %d", knockCookie.MaxAge, int(knockCookieTTL.Seconds()))
+	}
 
 	req2, _ := http.NewRequest(http.MethodGet, ts.URL+"/app", nil)
 	req2.Host = "example.local"
