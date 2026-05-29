@@ -585,6 +585,41 @@ func TestWebSocketDrainsHijackBufferedClientData(t *testing.T) {
 	}
 }
 
+func TestClearHopByHopRequestHeaders(t *testing.T) {
+	h := http.Header{}
+	h.Set("Connection", "keep-alive, X-Remove-Me")
+	h.Set("Keep-Alive", "timeout=5")
+	h.Set("Proxy-Authorization", "Basic secret")
+	h.Set("Proxy-Authenticate", "Basic")
+	h.Set("TE", "trailers")
+	h.Set("Trailer", "Expires")
+	h.Set("Transfer-Encoding", "chunked")
+	h.Set("Upgrade", "websocket")
+	h.Set("X-Remove-Me", "connection-token")
+	h.Set("X-Keep-Me", "end-to-end")
+
+	clearHopByHopRequestHeaders(h)
+
+	for _, name := range []string{
+		"Connection",
+		"Keep-Alive",
+		"Proxy-Authorization",
+		"Proxy-Authenticate",
+		"TE",
+		"Trailer",
+		"Transfer-Encoding",
+		"Upgrade",
+		"X-Remove-Me",
+	} {
+		if got := h.Get(name); got != "" {
+			t.Fatalf("expected %s to be removed, got %q", name, got)
+		}
+	}
+	if got := h.Get("X-Keep-Me"); got != "end-to-end" {
+		t.Fatalf("expected X-Keep-Me to remain, got %q", got)
+	}
+}
+
 func TestWebSocketUpstreamIdleTimeout(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -315,6 +315,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	clone.Host = stripDefaultPort(r.Host)
 	clearUnsafeRequestHeaders(clone.Header)
 	clearForwardedHeaders(clone.Header)
+	clearHopByHopRequestHeaders(clone.Header)
 	clone.Header.Set("X-Forwarded-Host", stripDefaultPort(r.Host))
 	clone.Header.Set("X-Forwarded-Proto", forwardedProto(r))
 	clone.Header.Set("Upgrade", "websocket")
@@ -490,6 +491,30 @@ func clearForwardedHeaders(h http.Header) {
 	h.Del("X-Forwarded-For")
 	h.Del("X-Forwarded-Host")
 	h.Del("X-Forwarded-Proto")
+}
+
+var hopByHopRequestHeaderNames = []string{
+	"Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"TE",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+func clearHopByHopRequestHeaders(h http.Header) {
+	for _, connection := range h.Values("Connection") {
+		for _, token := range strings.Split(connection, ",") {
+			if token = strings.TrimSpace(token); token != "" {
+				h.Del(token)
+			}
+		}
+	}
+	for _, name := range hopByHopRequestHeaderNames {
+		h.Del(name)
+	}
 }
 
 func stripDefaultPort(hostport string) string {
