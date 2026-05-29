@@ -778,7 +778,7 @@ func TestCertificateDomainCandidates(t *testing.T) {
 		"example.com":          {"example.com"},
 		"api.example.com":      {"api.example.com", "example.com"},
 		"api.example.com.":     {"api.example.com", "example.com"},
-		"a.b.example.co.uk":    {"a.b.example.co.uk", "b.example.co.uk", "example.co.uk", "co.uk"},
+		"a.b.example.co.uk":    {"a.b.example.co.uk", "b.example.co.uk", "example.co.uk"},
 		"127.0.0.1":            nil,
 		"localhost":            nil,
 		"api.example.com:8443": {"api.example.com", "example.com"},

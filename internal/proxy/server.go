@@ -827,8 +827,12 @@ func certificateDomainCandidates(host string) []string {
 	if len(parts) < 2 {
 		return nil
 	}
-	candidates := make([]string, 0, len(parts)-1)
-	for i := 0; i <= len(parts)-2; i++ {
+	last := len(parts) - 2
+	if len(parts) > 3 {
+		last--
+	}
+	candidates := make([]string, 0, last+1)
+	for i := 0; i <= last; i++ {
 		candidates = append(candidates, strings.Join(parts[i:], "."))
 	}
 	return candidates
