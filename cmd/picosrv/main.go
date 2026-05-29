@@ -23,6 +23,7 @@ import (
 
 const (
 	placeholderHMACSecret = "replace-with-long-random-secret"
+	minHMACSecretLength   = 16
 	defaultMaxHeaderBytes = 64 * 1024
 )
 
@@ -151,6 +152,9 @@ func getenv(key, fallback string) string {
 func validateHMACSecret(secret string) error {
 	if secret == placeholderHMACSecret {
 		return errors.New("hmac secret is still the default placeholder; generate a long random PICOSRV_HMAC_SECRET")
+	}
+	if len(secret) < minHMACSecretLength {
+		return fmt.Errorf("hmac secret must be at least %d bytes", minHMACSecretLength)
 	}
 	return nil
 }

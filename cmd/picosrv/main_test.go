@@ -57,6 +57,12 @@ func TestValidateHMACSecretRejectsPlaceholder(t *testing.T) {
 	}
 }
 
+func TestValidateHMACSecretRejectsShortSecret(t *testing.T) {
+	if err := validateHMACSecret("short"); err == nil {
+		t.Fatal("expected short secret to be rejected")
+	}
+}
+
 func TestValidateHMACSecretAllowsCustomSecret(t *testing.T) {
 	if err := validateHMACSecret("custom-long-random-secret"); err != nil {
 		t.Fatalf("expected custom secret to be allowed: %v", err)
