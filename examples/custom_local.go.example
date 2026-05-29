@@ -4,21 +4,41 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
-	// "strings"  // uncomment when uncommenting bypass helpers at the bottom
+	"os"
+	"strings"
 )
 
 type hostConfig struct {
-	Upstream  string
-	RootDir   string
-	NeedKnock bool
+	Upstream   string
+	RootDir    string
+	NeedKnock  bool
+	LLMGateway bool
 }
 
 var hostConfigs = map[string]hostConfig{
-	"app.example.com":    {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
-	"public.example.com": {Upstream: "http://127.0.0.1:8082", NeedKnock: false},
-	"files.example.com":  {RootDir: "/srv/files.example.com", NeedKnock: false},
+	"app.example.com":     {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
+	"public.example.com":  {Upstream: "http://127.0.0.1:8082", NeedKnock: false},
+	"files.example.com":   {RootDir: "/srv/files.example.com", NeedKnock: false},
+	"llm-lan.example.com": {LLMGateway: true, NeedKnock: false},
 }
+
+const (
+	openAIUpstream   = "https://api.openai.com"
+	deepSeekUpstream = "https://api.deepseek.com"
+	miniMaxUpstream  = "https://api.minimax.io"
+
+	openAIAPIKey   = "sk-openai-placeholder"
+	deepSeekAPIKey = "sk-deepseek-placeholder"
+	miniMaxAPIKey  = "sk-minimax-placeholder"
+
+	// If this file exists, LLM request bodies are appended to it for local
+	// debugging. Leave it absent during normal use.
+	llmCaptureFlagFile = "/tmp/picosrv-llm-capture.jsonl"
+)
 
 func init() {
 	SetEvaluatorFactory(func() Evaluator {
@@ -28,10 +48,14 @@ func init() {
 
 type customEvaluator struct{}
 
-func (customEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie func() bool) Decision {
+func (customEvaluator) Evaluate(ctx Context, r *http.Request, hasValidCookie func() bool) Decision {
 	cfg, ok := hostConfigs[ctx.Host]
 	if !ok {
 		return Decision{Kind: DecisionDeny, Reason: "unknown_host"}
+	}
+
+	if cfg.LLMGateway {
+		return allowLLMGateway(r)
 	}
 
 	// Knock always works.
@@ -58,6 +82,70 @@ func allowHost(cfg hostConfig, reason string) Decision {
 		return Decision{Kind: DecisionAllowFiles, RootDir: cfg.RootDir, Reason: reason}
 	}
 	return Decision{Kind: DecisionAllowProxy, Upstream: cfg.Upstream, Reason: reason}
+}
+
+func allowLLMGateway(r *http.Request) Decision {
+	body, err := readAndRestoreBody(r)
+	if err != nil {
+		return Decision{Kind: DecisionDeny, Reason: "read_body_failed"}
+	}
+	captureLLMBody(body)
+
+	upstream, apiKey := llmUpstreamForModel(llmModel(body))
+	if upstream == "" {
+		return Decision{Kind: DecisionDeny, Reason: "unknown_llm_model"}
+	}
+
+	r.Header.Set("Authorization", "Bearer "+apiKey)
+	return Decision{Kind: DecisionAllowExternalProxy, Upstream: upstream, Reason: "llm_gateway"}
+}
+
+func readAndRestoreBody(r *http.Request) ([]byte, error) {
+	if r.Body == nil {
+		return nil, nil
+	}
+	body, err := io.ReadAll(r.Body)
+	if closeErr := r.Body.Close(); err == nil {
+		err = closeErr
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return body, err
+}
+
+func captureLLMBody(body []byte) {
+	if len(body) == 0 {
+		return
+	}
+	if _, err := os.Stat(llmCaptureFlagFile); err != nil {
+		return
+	}
+	f, err := os.OpenFile(llmCaptureFlagFile, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(body, '\n'))
+}
+
+func llmModel(body []byte) string {
+	var payload struct {
+		Model string `json:"model"`
+	}
+	_ = json.Unmarshal(body, &payload)
+	return strings.ToLower(payload.Model)
+}
+
+func llmUpstreamForModel(model string) (string, string) {
+	switch {
+	case strings.HasPrefix(model, "gpt"):
+		return openAIUpstream, openAIAPIKey
+	case strings.HasPrefix(model, "deepseek"):
+		return deepSeekUpstream, deepSeekAPIKey
+	case strings.HasPrefix(model, "minimax"):
+		return miniMaxUpstream, miniMaxAPIKey
+	default:
+		return "", ""
+	}
 }
 
 // Uncomment to enable bypass helpers.
