@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"syscall"
 )
 
 const listenFdsStart = 3
@@ -50,7 +49,6 @@ func Listeners() ([]ActivatedListener, error) {
 		}
 		listeners = append(listeners, ActivatedListener{Listener: ln, Name: file.Name()})
 		_ = file.Close()
-		syscall.CloseOnExec(fd)
 	}
 
 	return listeners, nil
