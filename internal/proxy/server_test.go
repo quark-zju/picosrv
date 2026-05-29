@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -503,6 +504,84 @@ func TestWebSocketTunnel(t *testing.T) {
 	}
 	if string(msg) != "echo:ping" {
 		t.Fatalf("unexpected msg: %s", msg)
+	}
+}
+
+func TestWebSocketDrainsHijackBufferedClientData(t *testing.T) {
+	const bufferedData = "buffered-client-data"
+
+	gotData := make(chan string, 1)
+	backend, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	go func() {
+		conn, err := backend.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		reader := bufio.NewReader(conn)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				gotData <- ""
+				return
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		buf := make([]byte, len(bufferedData))
+		_, err = io.ReadFull(reader, buf)
+		if err != nil {
+			gotData <- ""
+			return
+		}
+		gotData <- string(buf)
+	}()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: "http://" + backend.Addr().String(), AllowReason: "test"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+
+	proxyURL, err := url.Parse(proxyServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConn, err := net.Dial("tcp", proxyURL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientConn.Close()
+	request := "GET /ws HTTP/1.1\r\n" +
+		"Host: example.local\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Upgrade: websocket\r\n" +
+		"\r\n" +
+		bufferedData
+	if _, err := clientConn.Write([]byte(request)); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case got := <-gotData:
+		if got != bufferedData {
+			t.Fatalf("backend read buffered data %q, want %q", got, bufferedData)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("backend did not receive hijack-buffered client data")
 	}
 }
 

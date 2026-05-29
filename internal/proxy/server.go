@@ -340,7 +340,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, copyErr := io.Copy(backendConn, clientConn)
+		_, copyErr := io.Copy(backendConn, clientRW)
 		errc <- copyErr
 	}()
 	go func() {
