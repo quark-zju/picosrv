@@ -649,6 +649,65 @@ func TestWebSocketDrainsHijackBufferedClientData(t *testing.T) {
 	}
 }
 
+func TestWebSocketConnectionLimit(t *testing.T) {
+	backendClosed := make(chan struct{})
+	upgrader := websocket.Upgrader{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		<-backendClosed
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, AllowReason: "test"}
+		}},
+		HMACSecret:              "secret",
+		Logger:                  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WebSocketMaxConnections: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+	proxyURL, err := url.Parse(proxyServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsURL := "ws://" + proxyURL.Host + "/ws"
+	hdr := http.Header{}
+	hdr.Set("Host", "example.local")
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, hdr)
+	if err != nil {
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+		t.Fatalf("first websocket dial: %v", err)
+	}
+	defer conn.Close()
+	defer close(backendClosed)
+
+	conn2, resp, err := websocket.DefaultDialer.Dial(wsURL, hdr)
+	if err == nil {
+		conn2.Close()
+		t.Fatal("expected second websocket dial to fail")
+	}
+	if resp == nil {
+		t.Fatalf("expected 503 response, got dial error without response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", resp.StatusCode)
+	}
+}
+
 func TestClearHopByHopRequestHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Set("Connection", "keep-alive, X-Remove-Me")

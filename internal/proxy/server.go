@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"picosrv/internal/config"
@@ -30,6 +31,7 @@ import (
 const cookieName = "picosrv_knock"
 const knockCookieTTL = 2 * 365 * 24 * time.Hour
 const defaultWebSocketIdleTimeout = 60 * time.Second
+const defaultWebSocketMaxConnections = 512
 
 type Options struct {
 	Evaluator                  config.Evaluator
@@ -38,6 +40,7 @@ type Options struct {
 	TLSReloadInterval          time.Duration
 	ProxyResponseHeaderTimeout time.Duration
 	WebSocketIdleTimeout       time.Duration
+	WebSocketMaxConnections    int
 	Logger                     *slog.Logger
 	ProxyTransport             *http.Transport
 }
@@ -51,6 +54,8 @@ type Server struct {
 	transport   *http.Transport
 	tlsState    *tlsCertState
 	wsTimeout   time.Duration
+	wsMaxConns  int64
+	wsActive    atomic.Int64
 }
 
 func New(opts Options) (*Server, error) {
@@ -69,6 +74,9 @@ func New(opts Options) (*Server, error) {
 	if opts.WebSocketIdleTimeout <= 0 {
 		opts.WebSocketIdleTimeout = defaultWebSocketIdleTimeout
 	}
+	if opts.WebSocketMaxConnections <= 0 {
+		opts.WebSocketMaxConnections = defaultWebSocketMaxConnections
+	}
 
 	s := &Server{
 		evaluator:  opts.Evaluator,
@@ -76,6 +84,7 @@ func New(opts Options) (*Server, error) {
 		logger:     opts.Logger,
 		transport:  opts.ProxyTransport,
 		wsTimeout:  opts.WebSocketIdleTimeout,
+		wsMaxConns: int64(opts.WebSocketMaxConnections),
 	}
 
 	if opts.CertDir != "" {
@@ -191,6 +200,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case config.DecisionAllowProxy:
 		upstream = decision.Upstream
 		if wsUpgrade {
+			if !s.tryAcquireWebSocket() {
+				status = http.StatusServiceUnavailable
+				http.Error(w, "websocket capacity reached", status)
+				break
+			}
+			defer s.releaseWebSocket()
 			hijacked, err := s.proxyWebSocket(w, r, decision.Upstream)
 			if err != nil {
 				status = http.StatusBadGateway
@@ -242,6 +257,22 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"allow_reason", decision.AllowReason,
 		"ws_upgrade", wsUpgrade,
 	)
+}
+
+func (s *Server) tryAcquireWebSocket() bool {
+	for {
+		active := s.wsActive.Load()
+		if active >= s.wsMaxConns {
+			return false
+		}
+		if s.wsActive.CompareAndSwap(active, active+1) {
+			return true
+		}
+	}
+}
+
+func (s *Server) releaseWebSocket() {
+	s.wsActive.Add(-1)
 }
 
 func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {

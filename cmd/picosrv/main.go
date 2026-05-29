@@ -34,6 +34,7 @@ func main() {
 		reloadIntervalRaw        = flag.String("tls-reload-interval", getenv("PICOSRV_TLS_RELOAD_INTERVAL", "30s"), "certificate reload interval")
 		responseHeaderTimeoutRaw = flag.String("proxy-response-header-timeout", getenv("PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT", "60s"), "timeout waiting for upstream response headers")
 		webSocketIdleTimeoutRaw  = flag.String("websocket-idle-timeout", getenv("PICOSRV_WEBSOCKET_IDLE_TIMEOUT", "60s"), "timeout waiting for upstream websocket data")
+		webSocketMaxConnsRaw     = flag.String("websocket-max-connections", getenv("PICOSRV_WEBSOCKET_MAX_CONNECTIONS", "512"), "maximum concurrent websocket connections")
 		maxHeaderBytesRaw        = flag.String("max-header-bytes", getenv("PICOSRV_MAX_HEADER_BYTES", strconv.Itoa(defaultMaxHeaderBytes)), "maximum request header bytes")
 	)
 	flag.Parse()
@@ -59,6 +60,10 @@ func main() {
 	if err != nil {
 		exitErr(logger, fmt.Errorf("invalid websocket-idle-timeout: %w", err))
 	}
+	webSocketMaxConns, err := parsePositiveInt(*webSocketMaxConnsRaw)
+	if err != nil {
+		exitErr(logger, fmt.Errorf("invalid websocket-max-connections: %w", err))
+	}
 	maxHeaderBytes, err := parsePositiveInt(*maxHeaderBytesRaw)
 	if err != nil {
 		exitErr(logger, fmt.Errorf("invalid max-header-bytes: %w", err))
@@ -71,6 +76,7 @@ func main() {
 		TLSReloadInterval:          reloadInterval,
 		ProxyResponseHeaderTimeout: responseHeaderTimeout,
 		WebSocketIdleTimeout:       webSocketIdleTimeout,
+		WebSocketMaxConnections:    webSocketMaxConns,
 		Logger:                     logger,
 	})
 	if err != nil {
