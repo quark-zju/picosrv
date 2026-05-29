@@ -33,6 +33,10 @@ type Evaluator interface {
 	Evaluate(ctx Context, r *http.Request, hasValidCookie func() bool) Decision
 }
 
+type HostValidator interface {
+	IsKnownHost(host string) bool
+}
+
 var evaluatorFactory func() Evaluator
 
 // SetEvaluatorFactory installs a process-local evaluator factory override.

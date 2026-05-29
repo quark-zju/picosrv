@@ -124,9 +124,22 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) RedirectHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := stripDefaultPort(r.Host)
+		if !s.isKnownRedirectHost(host, r) {
+			http.NotFound(w, r)
+			return
+		}
 		target := "https://" + host + r.URL.RequestURI()
 		http.Redirect(w, r, target, http.StatusMovedPermanently)
 	})
+}
+
+func (s *Server) isKnownRedirectHost(host string, r *http.Request) bool {
+	if validator, ok := s.evaluator.(config.HostValidator); ok {
+		return validator.IsKnownHost(host)
+	}
+	ctx := config.Context{Host: host, Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
+	decision := s.evaluator.Evaluate(ctx, r, func() bool { return false })
+	return decision.AllowReason != "unknown_host"
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {

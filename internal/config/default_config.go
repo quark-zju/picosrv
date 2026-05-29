@@ -44,3 +44,8 @@ func (defaultEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie fu
 
 	return Decision{Kind: DecisionDeny, AllowReason: "unknown_host"}
 }
+
+func (defaultEvaluator) IsKnownHost(host string) bool {
+	_, ok := defaultHostUpstreams[host]
+	return ok
+}

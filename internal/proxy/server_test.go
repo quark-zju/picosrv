@@ -35,6 +35,15 @@ func (s staticEvaluator) Evaluate(ctx config.Context, _ *http.Request, hasValidC
 	return s.fn(ctx, hasValidCookie)
 }
 
+type knownHostEvaluator struct {
+	staticEvaluator
+	hosts map[string]bool
+}
+
+func (e knownHostEvaluator) IsKnownHost(host string) bool {
+	return e.hosts[host]
+}
+
 type flushRecorder struct {
 	http.ResponseWriter
 	flushCalls      int
@@ -98,6 +107,61 @@ func TestCookieValidationIsLazy(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("expected evaluator to run once, got %d", calls)
+	}
+}
+
+func TestRedirectHandlerRejectsUnknownHost(t *testing.T) {
+	srv, err := New(Options{
+		Evaluator: knownHostEvaluator{
+			staticEvaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+				return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
+			}},
+			hosts: map[string]bool{"example.local": true},
+		},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://evil.local/path?q=1", nil)
+	req.Host = "evil.local"
+	rec := httptest.NewRecorder()
+
+	srv.RedirectHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestRedirectHandlerAllowsKnownHost(t *testing.T) {
+	srv, err := New(Options{
+		Evaluator: knownHostEvaluator{
+			staticEvaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+				return config.Decision{Kind: config.DecisionDeny, AllowReason: "policy"}
+			}},
+			hosts: map[string]bool{"example.local": true},
+		},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.local/path?q=1", nil)
+	req.Host = "example.local:80"
+	rec := httptest.NewRecorder()
+
+	srv.RedirectHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMovedPermanently {
+		t.Fatalf("expected 301, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "https://example.local/path?q=1" {
+		t.Fatalf("Location = %q", got)
 	}
 }
 
