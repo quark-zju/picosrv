@@ -771,16 +771,32 @@ func (s *tlsCertState) Run(ctx context.Context) {
 
 			reloaded := 0
 			for _, domain := range domains {
+				nextFiles, err := statCertFiles(s.certDir, domain)
+				if err != nil {
+					s.logger.Error("stat certificate", "domain", domain, "error", err)
+					continue
+				}
+				s.mu.RLock()
+				curr := s.certs[domain]
+				unchanged := curr.files.Equal(nextFiles)
+				s.mu.RUnlock()
+				if unchanged {
+					continue
+				}
+
 				next, err := loadCertRecord(s.certDir, domain)
 				if err != nil {
 					s.logger.Error("reload certificate", "domain", domain, "error", err)
 					continue
 				}
 				s.mu.Lock()
-				curr := s.certs[domain]
+				curr = s.certs[domain]
 				if curr.hash != next.hash {
 					s.certs[domain] = next
 					reloaded++
+				} else {
+					curr.files = next.files
+					s.certs[domain] = curr
 				}
 				s.mu.Unlock()
 			}
@@ -792,9 +808,19 @@ func (s *tlsCertState) Run(ctx context.Context) {
 }
 
 type certRecord struct {
-	cert *tls.Certificate
-	leaf *x509.Certificate
-	hash uint64
+	cert  *tls.Certificate
+	leaf  *x509.Certificate
+	files certFilesMeta
+	hash  uint64
+}
+
+type certFilesMeta struct {
+	fullchainModTime time.Time
+	privkeyModTime   time.Time
+}
+
+func (m certFilesMeta) Equal(other certFilesMeta) bool {
+	return m.fullchainModTime.Equal(other.fullchainModTime) && m.privkeyModTime.Equal(other.privkeyModTime)
 }
 
 func loadCertRecord(certDir, domain string) (certRecord, error) {
@@ -803,6 +829,10 @@ func loadCertRecord(certDir, domain string) (certRecord, error) {
 		return certRecord{}, err
 	}
 	privkey, err := safeCertPath(certDir, domain, "privkey.pem")
+	if err != nil {
+		return certRecord{}, err
+	}
+	files, err := statCertFiles(certDir, domain)
 	if err != nil {
 		return certRecord{}, err
 	}
@@ -827,7 +857,30 @@ func loadCertRecord(certDir, domain string) (certRecord, error) {
 	_, _ = h.Write(keyPEM)
 	sum := h.Sum(nil)
 	hash := binary.BigEndian.Uint64(sum[:8])
-	return certRecord{cert: &cert, leaf: leaf, hash: hash}, nil
+	return certRecord{cert: &cert, leaf: leaf, files: files, hash: hash}, nil
+}
+
+func statCertFiles(certDir, domain string) (certFilesMeta, error) {
+	fullchain, err := safeCertPath(certDir, domain, "fullchain.pem")
+	if err != nil {
+		return certFilesMeta{}, err
+	}
+	privkey, err := safeCertPath(certDir, domain, "privkey.pem")
+	if err != nil {
+		return certFilesMeta{}, err
+	}
+	fullchainInfo, err := os.Stat(fullchain)
+	if err != nil {
+		return certFilesMeta{}, err
+	}
+	privkeyInfo, err := os.Stat(privkey)
+	if err != nil {
+		return certFilesMeta{}, err
+	}
+	return certFilesMeta{
+		fullchainModTime: fullchainInfo.ModTime(),
+		privkeyModTime:   privkeyInfo.ModTime(),
+	}, nil
 }
 
 func (r certRecord) matchesServerName(serverName string) error {

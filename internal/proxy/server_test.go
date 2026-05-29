@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -992,6 +993,97 @@ func TestTLSCertStateAllowsSubdomainForWildcardOnlyCert(t *testing.T) {
 	}
 	if cert == nil || len(cert.Certificate) == 0 {
 		t.Fatal("expected certificate bytes")
+	}
+}
+
+func TestTLSCertStateReloadChecksMTimeBeforeHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	domainDir := filepath.Join(tmpDir, "example.com")
+	if err := os.MkdirAll(domainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fullchainPath := filepath.Join(domainDir, "fullchain.pem")
+	privkeyPath := filepath.Join(domainDir, "privkey.pem")
+	firstCertPEM, firstKeyPEM, err := generateSelfSignedCert([]string{"example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondCertPEM, secondKeyPEM, err := generateSelfSignedCert([]string{"example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondParsed, err := tls.X509KeyPair(secondCertPEM, secondKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fullchainPath, firstCertPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(privkeyPath, firstKeyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	initialTime := time.Now().Add(-time.Hour).Round(time.Second)
+	if err := os.Chtimes(fullchainPath, initialTime, initialTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(privkeyPath, initialTime, initialTime); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := newTLSCertState(tmpDir, 10*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstCert, err := state.GetCertificate(&tls.ClientHelloInfo{ServerName: "example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(fullchainPath, secondCertPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(privkeyPath, secondKeyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(fullchainPath, initialTime, initialTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(privkeyPath, initialTime, initialTime); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go state.Run(ctx)
+	time.Sleep(50 * time.Millisecond)
+	unchangedCert, err := state.GetCertificate(&tls.ClientHelloInfo{ServerName: "example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(unchangedCert.Certificate[0], firstCert.Certificate[0]) {
+		t.Fatal("expected certificate to stay cached when content changes without mtime change")
+	}
+
+	nextTime := initialTime.Add(2 * time.Second)
+	if err := os.Chtimes(fullchainPath, nextTime, nextTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(privkeyPath, nextTime, nextTime); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		reloadedCert, err := state.GetCertificate(&tls.ClientHelloInfo{ServerName: "example.com"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.Equal(reloadedCert.Certificate[0], secondParsed.Certificate[0]) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected certificate reload after mtime change")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
