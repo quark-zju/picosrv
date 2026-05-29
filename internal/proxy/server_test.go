@@ -216,6 +216,18 @@ func TestKnockCookieFlow(t *testing.T) {
 		t.Fatalf("knock cookie MaxAge = %d, want %d", knockCookie.MaxAge, int(knockCookieTTL.Seconds()))
 	}
 
+	crossHostReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/app", nil)
+	crossHostReq.Host = "other.example.local"
+	crossHostReq.AddCookie(knockCookie)
+	crossHostResp, err := client.Do(crossHostReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer crossHostResp.Body.Close()
+	if crossHostResp.StatusCode != http.StatusFound {
+		t.Fatalf("expected cross-host cookie reuse to miss auth and redirect, got %d", crossHostResp.StatusCode)
+	}
+
 	req2, _ := http.NewRequest(http.MethodGet, ts.URL+"/app", nil)
 	req2.Host = "example.local"
 	req2.AddCookie(knockCookie)

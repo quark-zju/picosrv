@@ -164,7 +164,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return cookieValid
 		}
 		cookieChecked = true
-		cookieValid = s.cookieAuth.Validate(r.Cookie(cookieName))
+		cookie, err := r.Cookie(cookieName)
+		cookieValid = s.cookieAuth.Validate(cookie, err, ctx.Host)
 		return cookieValid
 	}
 	decision := s.evaluator.Evaluate(ctx, r, hasValidCookie)
@@ -176,7 +177,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	switch decision.Kind {
 	case config.DecisionIssueCookieAndRedirect:
 		if decision.SetCookie {
-			value, err := s.cookieAuth.Issue(knockCookieTTL)
+			value, err := s.cookieAuth.Issue(knockCookieTTL, ctx.Host)
 			if err == nil {
 				http.SetCookie(w, &http.Cookie{
 					Name:     cookieName,
@@ -630,7 +631,8 @@ func (h *staticHandler) Close() error {
 }
 
 type cookiePayload struct {
-	Exp int64 `json:"exp"`
+	Exp  int64  `json:"exp"`
+	Host string `json:"host"`
 }
 
 type cookieSigner struct {
@@ -641,8 +643,8 @@ func newCookieSigner(secret string) *cookieSigner {
 	return &cookieSigner{secret: []byte(secret)}
 }
 
-func (c *cookieSigner) Issue(ttl time.Duration) (string, error) {
-	payload := cookiePayload{Exp: time.Now().Add(ttl).Unix()}
+func (c *cookieSigner) Issue(ttl time.Duration, host string) (string, error) {
+	payload := cookiePayload{Exp: time.Now().Add(ttl).Unix(), Host: host}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
@@ -651,7 +653,7 @@ func (c *cookieSigner) Issue(ttl time.Duration) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(body) + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-func (c *cookieSigner) Validate(cookie *http.Cookie, err error) bool {
+func (c *cookieSigner) Validate(cookie *http.Cookie, err error, host string) bool {
 	if err != nil || cookie == nil || cookie.Value == "" {
 		return false
 	}
@@ -675,7 +677,7 @@ func (c *cookieSigner) Validate(cookie *http.Cookie, err error) bool {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return false
 	}
-	return payload.Exp > time.Now().Unix()
+	return payload.Exp > time.Now().Unix() && payload.Host == host
 }
 
 func (c *cookieSigner) sign(b []byte) []byte {
