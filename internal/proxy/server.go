@@ -319,15 +319,15 @@ func (s *Server) reverseProxyFor(cacheKey string, target string, rewrite func(*h
 		return nil, fmt.Errorf("parse upstream %q: %w", target, err)
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(u)
-	proxy.Transport = s.transport
-	proxy.Director = nil
-	proxy.Rewrite = func(r *httputil.ProxyRequest) {
-		rewrite(r, u)
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		http.Error(w, "bad gateway", http.StatusBadGateway)
-		s.logger.Error("reverse proxy error", "error", err, "host", r.Host, "path", r.URL.Path)
+	proxy := &httputil.ReverseProxy{
+		Transport: s.transport,
+		Rewrite: func(r *httputil.ProxyRequest) {
+			rewrite(r, u)
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			s.logger.Error("reverse proxy error", "error", err, "host", r.Host, "path", r.URL.Path)
+		},
 	}
 
 	actual, _ := s.proxyByHost.LoadOrStore(cacheKey, proxy)
