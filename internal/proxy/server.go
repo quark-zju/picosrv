@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -163,6 +164,14 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	wsUpgrade := isWebSocketUpgrade(r)
 
 	switch decision.Kind {
+	case config.DecisionRequireBasicAuth:
+		realm := decision.Realm
+		if realm == "" {
+			realm = "picosrv"
+		}
+		w.Header().Set("WWW-Authenticate", "Basic realm="+strconv.Quote(realm))
+		status = http.StatusUnauthorized
+		http.Error(w, "unauthorized", status)
 	case config.DecisionIssueCookieAndRedirect:
 		if decision.SetCookie {
 			value, err := s.cookieAuth.Issue(knockCookieTTL, ctx.Host)

@@ -19,6 +19,7 @@ const (
 	DecisionAllowExternalProxy
 	DecisionAllowFiles
 	DecisionIssueCookieAndRedirect
+	DecisionRequireBasicAuth
 )
 
 type Decision struct {
@@ -28,6 +29,7 @@ type Decision struct {
 	Reason       string
 	RedirectPath string
 	SetCookie    bool
+	Realm        string
 }
 
 type Context struct {

@@ -78,6 +78,30 @@ func TestDenyByDefault(t *testing.T) {
 	}
 }
 
+func TestRequireBasicAuthChallengesClient(t *testing.T) {
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
+			return config.Decision{Kind: config.DecisionRequireBasicAuth, Realm: "private site", Reason: "basic_auth"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://example.local/private", nil)
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("WWW-Authenticate"); got != `Basic realm="private site"` {
+		t.Fatalf("WWW-Authenticate = %q", got)
+	}
+}
+
 func TestCookieValidationIsLazy(t *testing.T) {
 	calls := 0
 	srv, err := New(Options{
