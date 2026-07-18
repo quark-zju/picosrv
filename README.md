@@ -1,33 +1,30 @@
 # picosrv
 
-轻量反向代理，基于 systemd socket activation，支持 HTTPS、按域名转发或提供静态文件、LLM API 网关、WebSocket、敲门访问控制。
+HTTPS 服务
 
-## 快速上手
+- 配置：配置逻辑图灵完备，可按域名分别配置
+- 认证：用户名密码、敲门 URL 等
+- 证书：动态加载 HTTPS 证书，变化时重新加载，无需重启
+- 流式：支持 WebSocket 和 SSE
+- 服务：反向代理、静态文件
+- 轻量：仅三千行代码，攻击面小；无需用 root 运行
+
+使用场景：
+- HTTPS -> HTTP 反向代理，外加身份认证
+- LLM API 网关
+- 静态文件服务
+
+## 使用说明
 
 ### 1. 配置
+
+配置文件是 `go` 语言代码，运行下面的命令编辑配置：
 
 ```bash
 make config
 ```
 
-首次运行会从 `examples/custom_local.go.example` 复制模板到 `internal/config/custom_local.go`，并打开编辑器。编辑其中的 `hostConfigs` 即可定义你的域名规则——每个域名支持三种模式：
-
-- **反向代理** (`Upstream`)：将请求转发到指定的本地 HTTP 上游服务。
-- **静态文件** (`RootDir`)：以只读方式提供本地目录下的文件（不能通过 `..` 或越界符号链接跳出该目录）。
-- **LLM 网关** (`LLMGateway`)：按请求体中的模型名称自动路由到不同 AI API 提供商，并注入对应的 API Key（详见 `examples/custom_local.go.example`）。
-
-任意域名还可以通过 `BasicAuth` 配置用户名和密码，启用 HTTP Basic 访问验证。
-
-示例：
-
-```go
-var hostConfigs = map[string]hostConfig{
-    "app.example.com":     {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
-    "public.example.com":  {Upstream: "http://127.0.0.1:8082", NeedKnock: false},
-    "files.example.com":   {RootDir: "/srv/files.example.com", NeedKnock: false},
-    "llm-lan.example.com": {LLMGateway: true, NeedKnock: false},
-}
-```
+配置文件应该不难看懂。有疑问可咨询大语言模型。
 
 ### 2. 构建并部署
 
@@ -35,11 +32,11 @@ var hostConfigs = map[string]hostConfig{
 make deploy
 ```
 
-这一步会依次执行：创建 picosrv 系统用户、编译二进制、安装到 `/usr/local/bin`、生成 HMAC 密钥、安装 systemd 单元。
+将会按需创建 picosrv 服务用户，按需生成 HMAC 密钥，编译安装主程序，以及安装 systemd 服务。
 
 ### 3. 准备证书
 
-将域名证书放到 `/etc/picosrv/certs/<域名>/` 目录下，每个域名包含两个文件：
+在 `/etc/picosrv/certs/<域名>/` 下存放证书，例如：
 
 ```
 /etc/picosrv/certs/
@@ -48,9 +45,9 @@ make deploy
     └── privkey.pem
 ```
 
-TLS SNI 会从完整域名开始逐级向上查找证书目录。例如 `api.example.co.uk` 会依次尝试 `api.example.co.uk`、`example.co.uk`、`co.uk`。
+支持通配符证书。例如，域名 `api.example.com` 会依次尝试 `api.example.com`、`example.com`。
 
-如果使用 acme.sh 配置域名通配符证书，可将证书直接安装到 picosrv 的证书目录：
+若用 acme.sh 管理通配符证书，可直接指定上述目录，如：
 
 ```bash
 DOMAIN=example.com
@@ -60,7 +57,7 @@ acme.sh --install-cert -d '*.'"$DOMAIN" \
   --fullchain-file /etc/picosrv/certs/$DOMAIN/fullchain.pem
 ```
 
-确保 picosrv 用户能读取证书：
+注：picosrv 不使用 root 运行。需要确保 picosrv 用户能读取证书：
 
 ```bash
 sudo setfacl -Rm u:picosrv:rX /etc/picosrv/certs
@@ -88,22 +85,9 @@ journalctl -u picosrv.service -f
 
 ## 背景（为什么会有这个项目）
 
-2026 年，LLM 能力提升，软件漏洞被频繁发现，NGINX 出了 CVE-2026-42945。我觉得 NGINX 功能复杂，担心攻击面大。我只用到 NGINX 一小部分功能，所以想写一个轻量的替代。同时，我也想让个人配置舒服一点，比如，不用思考 IPv6、证书、默认站、如何做嵌套 `if`。安全上，不用 root，不写磁盘，使用 systemd 隔离功能加固。
+2026 年，LLM 能力提升，软件漏洞被频繁发现，NGINX 爆出 CVE-2026-42945 漏洞。我觉得 NGINX 功能复杂，担心攻击面大。我只用到 NGINX 一小部分功能，所以想写一个轻量的替代。同时，我也想让个人配置舒服一点，比如，不用思考 IPv6、证书、默认站、如何做嵌套 `if`。安全上，不用 root，不写磁盘，使用 systemd 隔离功能加固。
 
 后来，我想要一个局域网 LLM 网关，集中配置 API key，也实现按需记录请求内容的调试功能。研究了 8 个开源 LLM 网关项目，它们动辄几十万、几百万行，显得笨重。在想要开新项目前，发现 `picosrv` 恰好满足需求 - 只需少量修改。包含测试只有约三千行，兼顾了 NGINX 和 LLM 网关核心功能。
-
-## 命令行参数
-
-所有参数均可通过环境变量设置。
-
-| 参数 | 环境变量 | 默认值 | 说明 |
-|---|---|---|---|
-| `--hmac-secret` | `PICOSRV_HMAC_SECRET` | — | **必填**。HMAC 密钥 |
-| `--cert-dir` | `PICOSRV_CERT_DIR` | — | 证书根目录，如 `/etc/picosrv/certs` |
-| `--tls-reload-interval` | `PICOSRV_TLS_RELOAD_INTERVAL` | `30s` | 证书热加载检查间隔 |
-| `--proxy-response-header-timeout` | `PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT` | `60s` | 等待上游响应头的超时 |
-| `--websocket-idle-timeout` | `PICOSRV_WEBSOCKET_IDLE_TIMEOUT` | `60s` | WebSocket 上游无数据超时 |
-| `--max-header-bytes` | `PICOSRV_MAX_HEADER_BYTES` | `65536` | 客户端请求头大小上限 |
 
 ## 测试
 
