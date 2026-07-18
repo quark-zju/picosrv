@@ -44,7 +44,9 @@ type Context struct {
 // the request.
 type RequestAuth interface {
 	// HasValidCookie reports whether the request has a valid picosrv access
-	// cookie.
+	// cookie. To issue this cookie, an Evaluator can return a Decision such as
+	// Decision{Kind: DecisionIssueCookieAndRedirect, SetCookie: true,
+	// RedirectPath: "/"}.
 	HasValidCookie() bool
 
 	// ConsumeBasicAuth validates the request's HTTP Basic credentials against
