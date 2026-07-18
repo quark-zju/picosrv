@@ -995,6 +995,8 @@ func (r certRecord) matchesServerName(serverName string) error {
 }
 
 func safeCertPath(certDir, domain, filename string) (string, error) {
+	// This prevents lexical traversal from an untrusted SNI name. Certificate
+	// files and symlinks remain trusted administrator-managed deployment input.
 	root := filepath.Clean(certDir)
 	candidate := filepath.Clean(filepath.Join(root, domain, filename))
 	if candidate != root && !strings.HasPrefix(candidate, root+string(os.PathSeparator)) {
