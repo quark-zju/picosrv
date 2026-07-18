@@ -301,6 +301,10 @@ func (s *Server) externalProxyFor(target string) (*httputil.ReverseProxy, error)
 	return s.reverseProxyFor("external:"+target, target, func(r *httputil.ProxyRequest, u *url.URL) {
 		r.SetURL(u)
 		clearUnsafeRequestHeaders(r.Out.Header)
+		clearHopByHopRequestHeaders(r.Out.Header)
+		// Inbound cookies authenticate clients to this gateway and must never be
+		// disclosed to an external API provider.
+		r.Out.Header.Del("Cookie")
 	})
 }
 

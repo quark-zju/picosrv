@@ -562,6 +562,8 @@ func TestAllowExternalProxyUsesUpstreamHostAndForwardsRequest(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, proxyServer.URL+"/v1/chat/completions?model=gpt-4.1&stream=true", strings.NewReader("{}"))
 	req.Host = "llm-lan.example.com"
 	req.Header.Set("Authorization", "Bearer upstream-key")
+	req.Header.Set("Cookie", "picosrv_knock=gateway-secret")
+	req.Header.Set("Proxy-Authorization", "Basic proxy-secret")
 	req.Header.Set("X-Forwarded-Host", "llm-lan.example.com")
 	req.Header.Set("X-Forwarded-For", "198.51.100.9")
 	resp, err := http.DefaultClient.Do(req)
@@ -587,7 +589,7 @@ func TestAllowExternalProxyUsesUpstreamHostAndForwardsRequest(t *testing.T) {
 		if got.authorization != "Bearer upstream-key" {
 			t.Fatalf("Authorization = %q", got.authorization)
 		}
-		for _, name := range []string{"X-Forwarded-Host", "X-Forwarded-For", "X-Forwarded-Proto"} {
+		for _, name := range []string{"Cookie", "Proxy-Authorization", "X-Forwarded-Host", "X-Forwarded-For", "X-Forwarded-Proto"} {
 			if value := got.headers.Get(name); value != "" {
 				t.Fatalf("expected %s to be empty, got %q", name, value)
 			}
