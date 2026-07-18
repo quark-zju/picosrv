@@ -22,6 +22,17 @@ const (
 	DecisionRequireBasicAuth
 )
 
+type CachePolicy int
+
+const (
+	// CachePolicyDefault leaves the response's cache headers unchanged.
+	CachePolicyDefault CachePolicy = iota
+	// CachePolicyImmutable marks successful responses as publicly cacheable for
+	// one year. Callers should only use it for versioned or content-addressed
+	// resources whose contents never change at the same URL.
+	CachePolicyImmutable
+)
+
 type Decision struct {
 	Kind         DecisionKind
 	Upstream     string
@@ -30,6 +41,7 @@ type Decision struct {
 	RedirectPath string
 	SetCookie    bool
 	Realm        string
+	CachePolicy  CachePolicy
 }
 
 type Context struct {
