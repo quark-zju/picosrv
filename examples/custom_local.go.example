@@ -53,8 +53,9 @@ const (
 	miniMaxAPIKey  = "sk-minimax-placeholder"
 
 	// If this file exists, LLM request bodies are appended to it for local
-	// debugging. Leave it absent during normal use.
-	llmCaptureFlagFile = "/tmp/picosrv-llm-capture.jsonl"
+	// debugging. Leave it absent during normal use. The packaged systemd unit
+	// creates the host-visible, service-writable /run/picosrv directory.
+	llmCaptureFlagFile = "/run/picosrv/llm-capture.jsonl"
 )
 
 func init() {

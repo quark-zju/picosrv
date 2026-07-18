@@ -33,6 +33,8 @@ ProtectProc=invisible
 ProcSubset=pid
 DeviceAllow=
 UMask=0077
+RuntimeDirectory=picosrv
+RuntimeDirectoryMode=0700
 
 NoNewPrivileges=yes
 RestrictRealtime=yes
