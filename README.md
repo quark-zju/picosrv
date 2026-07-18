@@ -16,6 +16,8 @@ make config
 - **静态文件** (`RootDir`)：以只读方式提供本地目录下的文件（不能通过 `..` 或越界符号链接跳出该目录）。
 - **LLM 网关** (`LLMGateway`)：按请求体中的模型名称自动路由到不同 AI API 提供商，并注入对应的 API Key（详见 `examples/custom_local.go.example`）。
 
+任意域名还可以通过 `BasicAuth` 配置用户名和密码，启用 HTTP Basic 访问验证。
+
 示例：
 
 ```go
