@@ -29,11 +29,11 @@ import (
 )
 
 type staticEvaluator struct {
-	fn func(ctx config.Context, hasValidCookie func() bool) config.Decision
+	fn func(req config.EvaluationRequest) config.Decision
 }
 
-func (s staticEvaluator) Evaluate(ctx config.Context, _ *http.Request, hasValidCookie func() bool) config.Decision {
-	return s.fn(ctx, hasValidCookie)
+func (s staticEvaluator) Evaluate(req config.EvaluationRequest) config.Decision {
+	return s.fn(req)
 }
 
 type allowedHTTPHostEvaluator struct {
@@ -53,7 +53,7 @@ type flushRecorder struct {
 
 func TestDenyByDefault(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
 		}},
 		HMACSecret: "secret",
@@ -81,7 +81,7 @@ func TestDenyByDefault(t *testing.T) {
 func TestCookieValidationIsLazy(t *testing.T) {
 	calls := 0
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, hasValidCookie func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(req config.EvaluationRequest) config.Decision {
 			calls++
 			// Deliberately never call hasValidCookie for this path.
 			return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
@@ -114,7 +114,7 @@ func TestCookieValidationIsLazy(t *testing.T) {
 func TestRedirectHandlerRejectsUnknownHost(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: allowedHTTPHostEvaluator{
-			staticEvaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			staticEvaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 				return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
 			}},
 			hosts: map[string]bool{"example.local": true},
@@ -140,7 +140,7 @@ func TestRedirectHandlerRejectsUnknownHost(t *testing.T) {
 func TestRedirectHandlerAllowsKnownHost(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: allowedHTTPHostEvaluator{
-			staticEvaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+			staticEvaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 				return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
 			}},
 			hosts: map[string]bool{"example.local": true},
@@ -176,8 +176,8 @@ func TestKnockCookieFlow(t *testing.T) {
 	defer upstream.Close()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, hasValidCookie func() bool) config.Decision {
-			if hasValidCookie() {
+		Evaluator: staticEvaluator{fn: func(req config.EvaluationRequest) config.Decision {
+			if req.Auth.HasValidCookie() {
 				return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "cookie"}
 			}
 			return config.Decision{Kind: config.DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, Reason: "knock"}
@@ -297,7 +297,7 @@ func TestAllowProxyPreservesInboundHost(t *testing.T) {
 	defer upstream.Close()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
 		}},
 		HMACSecret: "secret",
@@ -358,7 +358,7 @@ func TestAllowExternalProxyUsesUpstreamHostAndForwardsRequest(t *testing.T) {
 	}
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowExternalProxy, Upstream: upstream.URL, Reason: "test"}
 		}},
 		HMACSecret: "secret",
@@ -412,7 +412,7 @@ func TestAllowExternalProxyUsesUpstreamHostAndForwardsRequest(t *testing.T) {
 
 func TestAllowExternalProxyRejectsWebSocketUpgrade(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowExternalProxy, Upstream: "http://127.0.0.1:1", Reason: "test"}
 		}},
 		HMACSecret: "secret",
@@ -477,7 +477,7 @@ func TestProxyStreamsServerSentEvents(t *testing.T) {
 	defer upstream.Close()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "stream"}
 		}},
 		HMACSecret: "secret",
@@ -542,7 +542,7 @@ func TestProxyStreamsServerSentEvents(t *testing.T) {
 
 func TestProxyUsesDefaultFlushInterval(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionDeny}
 		}},
 		HMACSecret: "secret",
@@ -606,7 +606,7 @@ func TestStaticFileServing(t *testing.T) {
 	}
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowFiles, RootDir: tmpDir, Reason: "files"}
 		}},
 		HMACSecret: "secret",
@@ -650,7 +650,7 @@ func TestStaticFileServingRejectsParentTraversal(t *testing.T) {
 	}
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowFiles, RootDir: rootDir, Reason: "files"}
 		}},
 		HMACSecret: "secret",
@@ -695,7 +695,7 @@ func TestWebSocketTunnel(t *testing.T) {
 	defer upstream.Close()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
 		}},
 		HMACSecret: "secret",
@@ -779,7 +779,7 @@ func TestWebSocketDrainsHijackBufferedClientData(t *testing.T) {
 	}()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: "http://" + backend.Addr().String(), Reason: "test"}
 		}},
 		HMACSecret: "secret",
@@ -835,7 +835,7 @@ func TestWebSocketConnectionLimit(t *testing.T) {
 	defer upstream.Close()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
 		}},
 		HMACSecret:              "secret",
@@ -928,7 +928,7 @@ func TestWebSocketUpstreamIdleTimeout(t *testing.T) {
 	defer upstream.Close()
 
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
 		}},
 		HMACSecret:           "secret",
@@ -969,7 +969,7 @@ func TestWebSocketUpstreamIdleTimeout(t *testing.T) {
 
 func TestWebSocketRejectsSecureUpstream(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.Context, _ func() bool) config.Decision {
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: "wss://backend.example.local/ws", Reason: "test"}
 		}},
 		HMACSecret: "secret",

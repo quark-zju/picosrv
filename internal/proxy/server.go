@@ -147,7 +147,7 @@ func (s *Server) isAllowedRedirectHost(host string, r *http.Request) bool {
 		return validator.IsAllowedHTTPHost(host)
 	}
 	ctx := config.Context{Host: host, Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
-	decision := s.evaluator.Evaluate(ctx, r, func() bool { return false })
+	decision := s.evaluator.Evaluate(config.EvaluationRequest{Context: ctx, HTTP: r, Auth: noRequestAuth{}})
 	return decision.Reason != "unknown_host"
 }
 
@@ -155,20 +155,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	clientIP := clientIPFromRemoteAddr(r.RemoteAddr)
 	ctx := config.Context{Host: stripDefaultPort(r.Host), Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
-	var (
-		cookieChecked bool
-		cookieValid   bool
-	)
-	hasValidCookie := func() bool {
-		if cookieChecked {
-			return cookieValid
-		}
-		cookieChecked = true
-		cookie, err := r.Cookie(cookieName)
-		cookieValid = s.cookieAuth.Validate(cookie, err, ctx.Host)
-		return cookieValid
-	}
-	decision := s.evaluator.Evaluate(ctx, r, hasValidCookie)
+	auth := &requestAuth{request: r, cookieAuth: s.cookieAuth, host: ctx.Host}
+	decision := s.evaluator.Evaluate(config.EvaluationRequest{Context: ctx, HTTP: r, Auth: auth})
 
 	status := http.StatusNotFound
 	upstream := ""

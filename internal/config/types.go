@@ -37,8 +37,25 @@ type Context struct {
 	Query map[string][]string
 }
 
+// RequestAuth provides request-scoped authentication operations to an
+// Evaluator. Implementations may cache validation results for the lifetime of
+// the request.
+type RequestAuth interface {
+	// HasValidCookie reports whether the request has a valid picosrv access
+	// cookie.
+	HasValidCookie() bool
+}
+
+// EvaluationRequest contains the normalized request data and request-scoped
+// capabilities available to an Evaluator.
+type EvaluationRequest struct {
+	Context Context
+	HTTP    *http.Request
+	Auth    RequestAuth
+}
+
 type Evaluator interface {
-	Evaluate(ctx Context, r *http.Request, hasValidCookie func() bool) Decision
+	Evaluate(req EvaluationRequest) Decision
 }
 
 type HTTPHostValidator interface {

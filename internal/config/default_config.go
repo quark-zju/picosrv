@@ -1,9 +1,6 @@
 package config
 
-import (
-	"net/http"
-	"strings"
-)
+import "strings"
 
 type defaultEvaluator struct{}
 
@@ -18,8 +15,9 @@ func NewEvaluator() Evaluator {
 	return defaultEvaluator{}
 }
 
-func (defaultEvaluator) Evaluate(ctx Context, _ *http.Request, hasValidCookie func() bool) Decision {
-	if hasValidCookie() {
+func (defaultEvaluator) Evaluate(req EvaluationRequest) Decision {
+	ctx := req.Context
+	if req.Auth.HasValidCookie() {
 		if upstream, ok := defaultHostUpstreams[ctx.Host]; ok {
 			return Decision{Kind: DecisionAllowProxy, Upstream: upstream, Reason: "cookie"}
 		}
