@@ -24,7 +24,9 @@ HTTPS 服务
 make config
 ```
 
-配置文件应该不难看懂。有疑问可咨询大语言模型。
+未生成自定义配置时，内置策略拒绝所有请求。配置文件应该不难看懂，有疑问可咨询大语言模型。
+
+配置代码具有完全权限，只应由可信管理员维护；其中通常包含域名、上游地址、用户名、密码或 API key 等敏感信息。`make config` 生成的 `internal/config/custom_local.go` 已被 `.gitignore` 排除，除非明确了解风险，否则不要将它加入版本控制。
 
 ### 2. 构建并部署
 
@@ -79,7 +81,7 @@ journalctl -u picosrv.service -f
 
 - **监听方式**：进程不直接绑定端口，由 systemd 通过 socket activation 传入已监听的 socket，因此重启服务不会丢失连接。默认监听 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加一个 `ListenStream=80` 的 socket 文件。
 - **证书加载**：根据 TLS SNI 从完整域名开始逐级向上查找 `cert-dir` 下的证书目录。已使用过的证书目录会按 `tls-reload-interval` 定时重载（默认 30 秒），无需重启。
-- **访问控制**：请求经过策略模块，根据 Host、Path、UA、Query、Cookie 等信息返回决策。默认策略仅作示例，生产环境通过 `internal/config/custom_local.go` 覆盖。决策类型包括：反代到私有后端（保留入口 Host）、反代到外部 API（使用上游 Host，适合 LLM 网关）、文件服务、签发敲门 Cookie 并重定向、拒绝。
+- **访问控制**：请求经过策略模块，根据 Host、Path、UA、Query、Cookie 等信息返回决策。内置策略拒绝所有请求；运行 `make config` 后由 `internal/config/custom_local.go` 提供实际策略。决策类型包括：反代到私有后端（保留入口 Host）、反代到外部 API（使用上游 Host，适合 LLM 网关）、文件服务、签发敲门 Cookie 并重定向、拒绝。
 - **敲门 Cookie**：`HttpOnly`、`Secure`、`SameSite=Lax`，默认有效期 2 年。
 - **日志**：统一输出 JSON 格式，便于 journald / Loki / ELK 等工具采集。
 
