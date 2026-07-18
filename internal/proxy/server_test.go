@@ -102,6 +102,41 @@ func TestRequireBasicAuthChallengesClient(t *testing.T) {
 	}
 }
 
+func TestBasicAuthCredentialsAreNotForwarded(t *testing.T) {
+	upstreamAuthorization := make(chan string, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAuthorization <- r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(req config.EvaluationRequest) config.Decision {
+			if !req.Auth.ConsumeBasicAuth("alice", "secret") {
+				return config.Decision{Kind: config.DecisionRequireBasicAuth, Realm: "private", Reason: "basic_auth"}
+			}
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "basic_auth"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://example.local/private", nil)
+	req.SetBasicAuth("alice", "secret")
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	if got := <-upstreamAuthorization; got != "" {
+		t.Fatalf("upstream Authorization = %q", got)
+	}
+}
+
 func TestCookieValidationIsLazy(t *testing.T) {
 	calls := 0
 	srv, err := New(Options{

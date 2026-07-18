@@ -1,6 +1,10 @@
 package proxy
 
-import "net/http"
+import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"net/http"
+)
 
 type requestAuth struct {
 	request    *http.Request
@@ -21,8 +25,32 @@ func (a *requestAuth) HasValidCookie() bool {
 	return a.cookieValid
 }
 
+func (a *requestAuth) ConsumeBasicAuth(expectedUser, expectedPassword string) bool {
+	user, password, ok := a.request.BasicAuth()
+	if !ok {
+		return false
+	}
+
+	userHash := sha256.Sum256([]byte(user))
+	expectedUserHash := sha256.Sum256([]byte(expectedUser))
+	passwordHash := sha256.Sum256([]byte(password))
+	expectedPasswordHash := sha256.Sum256([]byte(expectedPassword))
+	valid := subtle.ConstantTimeCompare(userHash[:], expectedUserHash[:]) &
+		subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:])
+	if valid != 1 {
+		return false
+	}
+
+	a.request.Header.Del("Authorization")
+	return true
+}
+
 type noRequestAuth struct{}
 
 func (noRequestAuth) HasValidCookie() bool {
+	return false
+}
+
+func (noRequestAuth) ConsumeBasicAuth(_, _ string) bool {
 	return false
 }

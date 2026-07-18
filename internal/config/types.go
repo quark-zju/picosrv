@@ -46,6 +46,11 @@ type RequestAuth interface {
 	// HasValidCookie reports whether the request has a valid picosrv access
 	// cookie.
 	HasValidCookie() bool
+
+	// ConsumeBasicAuth validates the request's HTTP Basic credentials against
+	// user and password. On success it removes the Authorization header so the
+	// credentials cannot be forwarded to an upstream handler.
+	ConsumeBasicAuth(user, password string) bool
 }
 
 // EvaluationRequest contains the normalized request data and request-scoped
