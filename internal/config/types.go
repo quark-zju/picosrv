@@ -10,7 +10,9 @@ const (
 	DecisionDeny DecisionKind = iota
 	// DecisionAllowProxy forwards to a private backend while preserving the
 	// original inbound Host header. Use this for normal site reverse proxying
-	// where the backend expects the public virtual host.
+	// where the backend expects the public virtual host. Request bodies stream
+	// through without a global size limit; evaluators that buffer them must set
+	// their own limit.
 	DecisionAllowProxy
 	// DecisionAllowExternalProxy forwards to an external API upstream using the
 	// upstream URL's Host header. Use this for public API providers such as
@@ -34,7 +36,10 @@ const (
 )
 
 type Decision struct {
-	Kind         DecisionKind
+	Kind DecisionKind
+	// Upstream and RootDir should come from finite, administrator-controlled
+	// configuration. Unbounded request-derived values grow cached handlers for
+	// the lifetime of the process.
 	Upstream     string
 	RootDir      string
 	Reason       string
