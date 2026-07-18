@@ -204,6 +204,33 @@ func TestUnknownHostSkipsEvaluation(t *testing.T) {
 	}
 }
 
+func TestRequestHostIsNormalizedBeforeEvaluation(t *testing.T) {
+	var evaluatedHost string
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{
+			fn: func(req config.EvaluationRequest) config.Decision {
+				evaluatedHost = req.Context.Host
+				return config.Decision{Kind: config.DecisionDeny, Reason: "test"}
+			},
+			knownHosts: map[string]bool{"example.local": true},
+		},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://example.local/private", nil)
+	req.Host = "EXAMPLE.LOCAL.:443"
+	srv.Handler().ServeHTTP(rec, req)
+
+	if evaluatedHost != "example.local" {
+		t.Fatalf("evaluated Host = %q", evaluatedHost)
+	}
+}
+
 func TestRequireBasicAuthChallengesClient(t *testing.T) {
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
@@ -340,7 +367,7 @@ func TestRedirectHandlerAllowsKnownHost(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.local/path?q=1", nil)
-	req.Host = "example.local:80"
+	req.Host = "EXAMPLE.LOCAL.:80"
 	rec := httptest.NewRecorder()
 
 	srv.RedirectHandler().ServeHTTP(rec, req)

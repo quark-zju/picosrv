@@ -134,7 +134,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) RedirectHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host := stripDefaultPort(r.Host)
+		host := normalizeRequestHost(r.Host)
 		if !s.evaluator.IsKnownHost(host) {
 			http.NotFound(w, r)
 			return
@@ -147,7 +147,7 @@ func (s *Server) RedirectHandler() http.Handler {
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	clientIP := clientIPFromRemoteAddr(r.RemoteAddr)
-	ctx := config.Context{Host: stripDefaultPort(r.Host), Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
+	ctx := config.Context{Host: normalizeRequestHost(r.Host), Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
 	decision := config.Decision{Kind: config.DecisionDeny, Reason: "unknown_host"}
 	if s.evaluator.IsKnownHost(ctx.Host) {
 		auth := &requestAuth{request: r, cookieAuth: s.cookieAuth, host: ctx.Host}
@@ -600,6 +600,19 @@ func stripDefaultPort(hostport string) string {
 		return host
 	}
 	return hostport
+}
+
+func normalizeRequestHost(hostport string) string {
+	hostport = strings.TrimSpace(hostport)
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return strings.TrimSuffix(strings.ToLower(hostport), ".")
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if port == "80" || port == "443" {
+		return host
+	}
+	return net.JoinHostPort(host, port)
 }
 
 func clientIPFromRemoteAddr(remoteAddr string) string {
