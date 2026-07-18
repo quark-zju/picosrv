@@ -17,13 +17,24 @@ type hostConfig struct {
 	RootDir    string
 	NeedKnock  bool
 	LLMGateway bool
+	BasicAuth  *basicAuthConfig
+}
+
+type basicAuthConfig struct {
+	User     string
+	Password string
+}
+
+func basicAuth(user, password string) *basicAuthConfig {
+	return &basicAuthConfig{User: user, Password: password}
 }
 
 var hostConfigs = map[string]hostConfig{
 	"app.example.com":     {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
-	"public.example.com":  {Upstream: "http://127.0.0.1:8082", NeedKnock: false},
-	"files.example.com":   {RootDir: "/srv/files.example.com", NeedKnock: false},
-	"llm-lan.example.com": {LLMGateway: true, NeedKnock: false},
+	"public.example.com":  {Upstream: "http://127.0.0.1:8082"},
+	"basic.example.com":   {Upstream: "http://127.0.0.1:8083", BasicAuth: basicAuth("admin", "change-me")},
+	"files.example.com":   {RootDir: "/srv/files.example.com"},
+	"llm-lan.example.com": {LLMGateway: true},
 }
 
 const (
@@ -48,10 +59,16 @@ func init() {
 
 type customEvaluator struct{}
 
-func (customEvaluator) Evaluate(ctx Context, r *http.Request, hasValidCookie func() bool) Decision {
+func (customEvaluator) Evaluate(req EvaluationRequest) Decision {
+	ctx := req.Context
+	r := req.HTTP
 	cfg, ok := hostConfigs[ctx.Host]
 	if !ok {
 		return Decision{Kind: DecisionDeny, Reason: "unknown_host"}
+	}
+
+	if cfg.BasicAuth != nil && !req.Auth.ConsumeBasicAuth(cfg.BasicAuth.User, cfg.BasicAuth.Password) {
+		return Decision{Kind: DecisionRequireBasicAuth, Realm: ctx.Host, Reason: "basic_auth"}
 	}
 
 	if cfg.LLMGateway {
@@ -64,7 +81,7 @@ func (customEvaluator) Evaluate(ctx Context, r *http.Request, hasValidCookie fun
 	}
 
 	if cfg.NeedKnock {
-		if hasValidCookie() {
+		if req.Auth.HasValidCookie() {
 			return allowHost(cfg, "cookie")
 		}
 		// Uncomment to allow specific paths or UAs to bypass knock:
