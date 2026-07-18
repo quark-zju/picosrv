@@ -1,11 +1,15 @@
 // 示例：复制到 internal/config/custom_local.go。
 // 该文件通过注册 evaluator 工厂覆盖默认策略，实现本机私有策略。
+//
+// 这是含凭证的可信管理员配置，不要提交到版本控制。LLM gateway 会代客户端
+// 注入真实 API key，且不提供自身认证；仅应把对应域名暴露给可信内网客户端。
 
 package config
 
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -30,9 +34,10 @@ func basicAuth(user, password string) *basicAuthConfig {
 }
 
 var hostConfigs = map[string]hostConfig{
-	"app.example.com":     {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
-	"public.example.com":  {Upstream: "http://127.0.0.1:8082"},
-	"basic.example.com":   {Upstream: "http://127.0.0.1:8083", BasicAuth: basicAuth("admin", "change-me")},
+	"app.example.com":    {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
+	"public.example.com": {Upstream: "http://127.0.0.1:8082"},
+	// Replace both Basic Auth placeholders before enabling this host.
+	"basic.example.com":   {Upstream: "http://127.0.0.1:8083", BasicAuth: basicAuth("replace-user", "replace-password")},
 	"files.example.com":   {RootDir: "/srv/files.example.com"},
 	"llm-lan.example.com": {LLMGateway: true},
 }
@@ -41,6 +46,7 @@ const (
 	openAIUpstream   = "https://api.openai.com"
 	deepSeekUpstream = "https://api.deepseek.com"
 	miniMaxUpstream  = "https://api.minimax.io"
+	maxLLMBodyBytes  = 16 << 20
 
 	openAIAPIKey   = "sk-openai-placeholder"
 	deepSeekAPIKey = "sk-deepseek-placeholder"
@@ -126,9 +132,14 @@ func readAndRestoreBody(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
-	body, err := io.ReadAll(r.Body)
+	// Unlike the normal streaming reverse-proxy path, model routing needs the
+	// complete JSON body in memory, so keep this example explicitly bounded.
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxLLMBodyBytes+1))
 	if closeErr := r.Body.Close(); err == nil {
 		err = closeErr
+	}
+	if err == nil && len(body) > maxLLMBodyBytes {
+		err = fmt.Errorf("LLM request body exceeds %d bytes", maxLLMBodyBytes)
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	return body, err
