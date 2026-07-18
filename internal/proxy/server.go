@@ -366,7 +366,11 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	default:
 		return false, fmt.Errorf("unsupported websocket upstream scheme %q", u.Scheme)
 	}
-	backendConn, err := s.transport.DialContext(r.Context(), "tcp", u.Host)
+	backendAddress, err := websocketUpstreamAddress(u)
+	if err != nil {
+		return false, err
+	}
+	backendConn, err := s.transport.DialContext(r.Context(), "tcp", backendAddress)
 	if err != nil {
 		return false, err
 	}
@@ -479,7 +483,19 @@ func defaultTransport(responseHeaderTimeout time.Duration) *http.Transport {
 }
 
 func isWebSocketUpgrade(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") && headerContainsToken(r.Header, "Connection", "upgrade")
+	return r.Method == http.MethodGet && strings.EqualFold(r.Header.Get("Upgrade"), "websocket") && headerContainsToken(r.Header, "Connection", "upgrade")
+}
+
+func websocketUpstreamAddress(u *url.URL) (string, error) {
+	host := u.Hostname()
+	if host == "" {
+		return "", errors.New("websocket upstream host is empty")
+	}
+	port := u.Port()
+	if port == "" {
+		port = "80"
+	}
+	return net.JoinHostPort(host, port), nil
 }
 
 func headerContainsToken(h http.Header, key, token string) bool {

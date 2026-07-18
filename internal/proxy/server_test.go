@@ -959,6 +959,29 @@ func TestWebSocketTunnel(t *testing.T) {
 	}
 }
 
+func TestWebSocketUpgradeRequiresGet(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "http://example.local/ws", nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	if isWebSocketUpgrade(req) {
+		t.Fatal("POST must not enter the WebSocket hijack path")
+	}
+}
+
+func TestWebSocketUpstreamAddressAddsDefaultPort(t *testing.T) {
+	u, err := url.Parse("http://backend.example.local/ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := websocketUpstreamAddress(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "backend.example.local:80" {
+		t.Fatalf("upstream address = %q", got)
+	}
+}
+
 func TestWebSocketDrainsHijackBufferedClientData(t *testing.T) {
 	const bufferedData = "buffered-client-data"
 
