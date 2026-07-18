@@ -77,6 +77,104 @@ func TestDenyByDefault(t *testing.T) {
 	}
 }
 
+func TestProxyAppliesImmutableCachePolicy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte("versioned asset"))
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
+			return config.Decision{
+				Kind:        config.DecisionAllowProxy,
+				Upstream:    upstream.URL,
+				Reason:      "immutable_asset",
+				CachePolicy: config.CachePolicyImmutable,
+			}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.CloseIdleConnections()
+
+	req := httptest.NewRequest(http.MethodGet, "http://foo/asserts/app.js", nil)
+	req.Host = "foo"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != immutableCacheControl {
+		t.Fatalf("unexpected Cache-Control %q", got)
+	}
+}
+
+func TestImmutableCachePolicyStatuses(t *testing.T) {
+	tests := []struct {
+		status int
+		want   bool
+	}{
+		{status: http.StatusOK, want: true},
+		{status: http.StatusPartialContent, want: true},
+		{status: http.StatusNoContent, want: true},
+		{status: http.StatusMovedPermanently, want: true},
+		{status: http.StatusFound, want: false},
+		{status: http.StatusNotModified, want: true},
+		{status: http.StatusTemporaryRedirect, want: false},
+		{status: http.StatusPermanentRedirect, want: true},
+		{status: http.StatusNotFound, want: false},
+		{status: http.StatusInternalServerError, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(http.StatusText(tt.status), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			rec.Header().Set("Cache-Control", "no-store")
+			capture := newStatusCapture(rec, config.CachePolicyImmutable)
+			capture.WriteHeader(tt.status)
+
+			got := rec.Header().Get("Cache-Control")
+			if tt.want && got != immutableCacheControl {
+				t.Fatalf("expected immutable Cache-Control, got %q", got)
+			}
+			if !tt.want && got != "no-store" {
+				t.Fatalf("expected original Cache-Control, got %q", got)
+			}
+		})
+	}
+}
+
+func TestImmutableCachePolicyHandlesImplicitOK(t *testing.T) {
+	tests := []struct {
+		name string
+		act  func(*statusCapture)
+	}{
+		{name: "write", act: func(w *statusCapture) { _, _ = w.Write([]byte("body")) }},
+		{name: "flush", act: func(w *statusCapture) { w.Flush() }},
+		{name: "empty", act: func(w *statusCapture) { w.finish() }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			capture := newStatusCapture(rec, config.CachePolicyImmutable)
+			tt.act(capture)
+
+			if got := rec.Header().Get("Cache-Control"); got != immutableCacheControl {
+				t.Fatalf("unexpected Cache-Control %q", got)
+			}
+			if capture.status != http.StatusOK {
+				t.Fatalf("expected captured 200, got %d", capture.status)
+			}
+		})
+	}
+}
+
 func TestUnknownHostSkipsEvaluation(t *testing.T) {
 	evaluationCalls := 0
 	srv, err := New(Options{

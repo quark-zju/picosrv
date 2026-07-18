@@ -33,6 +33,7 @@ const cookieName = "picosrv_knock"
 const knockCookieTTL = 2 * 365 * 24 * time.Hour
 const defaultWebSocketIdleTimeout = 60 * time.Second
 const defaultWebSocketMaxConnections = 512
+const immutableCacheControl = "public, max-age=31536000, immutable"
 
 type Options struct {
 	Evaluator                  config.Evaluator
@@ -217,8 +218,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("build proxy", "error", err)
 			break
 		}
-		rw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
+		rw := newStatusCapture(w, decision.CachePolicy)
 		proxy.ServeHTTP(rw, r)
+		rw.finish()
 		status = rw.status
 	case config.DecisionAllowExternalProxy:
 		upstream = decision.Upstream
@@ -234,8 +236,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("build external proxy", "error", err)
 			break
 		}
-		rw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
+		rw := newStatusCapture(w, decision.CachePolicy)
 		proxy.ServeHTTP(rw, r)
+		rw.finish()
 		status = rw.status
 	case config.DecisionAllowFiles:
 		upstream = decision.RootDir
@@ -246,8 +249,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("build file server", "error", err, "root_dir", decision.RootDir)
 			break
 		}
-		rw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
+		rw := newStatusCapture(w, decision.CachePolicy)
 		handler.ServeHTTP(rw, r)
+		rw.finish()
 		status = rw.status
 	default:
 		status = http.StatusNotFound
@@ -607,15 +611,42 @@ func clientIPFromRemoteAddr(remoteAddr string) string {
 
 type statusCapture struct {
 	http.ResponseWriter
-	status int
+	status      int
+	cachePolicy config.CachePolicy
+	wroteHeader bool
+}
+
+func newStatusCapture(w http.ResponseWriter, cachePolicy config.CachePolicy) *statusCapture {
+	return &statusCapture{ResponseWriter: w, status: http.StatusOK, cachePolicy: cachePolicy}
+}
+
+func (s *statusCapture) Write(p []byte) (int, error) {
+	if !s.wroteHeader {
+		s.WriteHeader(http.StatusOK)
+	}
+	return s.ResponseWriter.Write(p)
 }
 
 func (s *statusCapture) WriteHeader(code int) {
+	if code >= 100 && code < 200 {
+		s.ResponseWriter.WriteHeader(code)
+		return
+	}
+	if s.wroteHeader {
+		return
+	}
+	s.wroteHeader = true
 	s.status = code
+	if s.cachePolicy == config.CachePolicyImmutable && isImmutableCacheStatus(code) {
+		s.Header().Set("Cache-Control", immutableCacheControl)
+	}
 	s.ResponseWriter.WriteHeader(code)
 }
 
 func (s *statusCapture) Flush() {
+	if !s.wroteHeader {
+		s.WriteHeader(http.StatusOK)
+	}
 	if flusher, ok := s.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -624,6 +655,9 @@ func (s *statusCapture) Flush() {
 func (s *statusCapture) FlushError() error {
 	type flushErrorer interface {
 		FlushError() error
+	}
+	if !s.wroteHeader {
+		s.WriteHeader(http.StatusOK)
 	}
 	if flusher, ok := s.ResponseWriter.(flushErrorer); ok {
 		return flusher.FlushError()
@@ -637,6 +671,19 @@ func (s *statusCapture) FlushError() error {
 
 func (s *statusCapture) Unwrap() http.ResponseWriter {
 	return s.ResponseWriter
+}
+
+func (s *statusCapture) finish() {
+	if !s.wroteHeader {
+		s.WriteHeader(http.StatusOK)
+	}
+}
+
+func isImmutableCacheStatus(code int) bool {
+	return code >= 200 && code < 300 ||
+		code == http.StatusNotModified ||
+		code == http.StatusMovedPermanently ||
+		code == http.StatusPermanentRedirect
 }
 
 type staticHandler struct {
