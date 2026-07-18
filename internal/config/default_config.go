@@ -43,7 +43,7 @@ func (defaultEvaluator) Evaluate(req EvaluationRequest) Decision {
 	return Decision{Kind: DecisionDeny, Reason: "unknown_host"}
 }
 
-func (defaultEvaluator) IsAllowedHTTPHost(host string) bool {
+func (defaultEvaluator) IsKnownHost(host string) bool {
 	_, ok := defaultHostUpstreams[host]
 	return ok
 }

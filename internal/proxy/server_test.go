@@ -29,20 +29,19 @@ import (
 )
 
 type staticEvaluator struct {
-	fn func(req config.EvaluationRequest) config.Decision
+	fn         func(req config.EvaluationRequest) config.Decision
+	knownHosts map[string]bool
 }
 
 func (s staticEvaluator) Evaluate(req config.EvaluationRequest) config.Decision {
 	return s.fn(req)
 }
 
-type allowedHTTPHostEvaluator struct {
-	staticEvaluator
-	hosts map[string]bool
-}
-
-func (e allowedHTTPHostEvaluator) IsAllowedHTTPHost(host string) bool {
-	return e.hosts[host]
+func (s staticEvaluator) IsKnownHost(host string) bool {
+	if s.knownHosts == nil {
+		return true
+	}
+	return s.knownHosts[host]
 }
 
 type flushRecorder struct {
@@ -75,6 +74,35 @@ func TestDenyByDefault(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestUnknownHostSkipsEvaluation(t *testing.T) {
+	evaluationCalls := 0
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{
+			fn: func(_ config.EvaluationRequest) config.Decision {
+				evaluationCalls++
+				return config.Decision{Kind: config.DecisionAllowFiles, RootDir: t.TempDir(), Reason: "unexpected"}
+			},
+			knownHosts: map[string]bool{"example.local": true},
+		},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://unknown.local/private", nil)
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	if evaluationCalls != 0 {
+		t.Fatalf("expected evaluator not to run, got %d calls", evaluationCalls)
 	}
 }
 
@@ -172,11 +200,12 @@ func TestCookieValidationIsLazy(t *testing.T) {
 
 func TestRedirectHandlerRejectsUnknownHost(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: allowedHTTPHostEvaluator{
-			staticEvaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
+		Evaluator: staticEvaluator{
+			fn: func(_ config.EvaluationRequest) config.Decision {
+				t.Fatal("redirect handler must not evaluate request policy")
 				return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
-			}},
-			hosts: map[string]bool{"example.local": true},
+			},
+			knownHosts: map[string]bool{"example.local": true},
 		},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -198,11 +227,12 @@ func TestRedirectHandlerRejectsUnknownHost(t *testing.T) {
 
 func TestRedirectHandlerAllowsKnownHost(t *testing.T) {
 	srv, err := New(Options{
-		Evaluator: allowedHTTPHostEvaluator{
-			staticEvaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
+		Evaluator: staticEvaluator{
+			fn: func(_ config.EvaluationRequest) config.Decision {
+				t.Fatal("redirect handler must not evaluate request policy")
 				return config.Decision{Kind: config.DecisionDeny, Reason: "policy"}
-			}},
-			hosts: map[string]bool{"example.local": true},
+			},
+			knownHosts: map[string]bool{"example.local": true},
 		},
 		HMACSecret: "secret",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),

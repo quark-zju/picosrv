@@ -134,7 +134,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) RedirectHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := stripDefaultPort(r.Host)
-		if !s.isAllowedRedirectHost(host, r) {
+		if !s.evaluator.IsKnownHost(host) {
 			http.NotFound(w, r)
 			return
 		}
@@ -143,21 +143,15 @@ func (s *Server) RedirectHandler() http.Handler {
 	})
 }
 
-func (s *Server) isAllowedRedirectHost(host string, r *http.Request) bool {
-	if validator, ok := s.evaluator.(config.HTTPHostValidator); ok {
-		return validator.IsAllowedHTTPHost(host)
-	}
-	ctx := config.Context{Host: host, Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
-	decision := s.evaluator.Evaluate(config.EvaluationRequest{Context: ctx, HTTP: r, Auth: noRequestAuth{}})
-	return decision.Reason != "unknown_host"
-}
-
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	clientIP := clientIPFromRemoteAddr(r.RemoteAddr)
 	ctx := config.Context{Host: stripDefaultPort(r.Host), Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
-	auth := &requestAuth{request: r, cookieAuth: s.cookieAuth, host: ctx.Host}
-	decision := s.evaluator.Evaluate(config.EvaluationRequest{Context: ctx, HTTP: r, Auth: auth})
+	decision := config.Decision{Kind: config.DecisionDeny, Reason: "unknown_host"}
+	if s.evaluator.IsKnownHost(ctx.Host) {
+		auth := &requestAuth{request: r, cookieAuth: s.cookieAuth, host: ctx.Host}
+		decision = s.evaluator.Evaluate(config.EvaluationRequest{Context: ctx, HTTP: r, Auth: auth})
+	}
 
 	status := http.StatusNotFound
 	upstream := ""

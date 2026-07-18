@@ -59,6 +59,11 @@ func init() {
 
 type customEvaluator struct{}
 
+func (customEvaluator) IsKnownHost(host string) bool {
+	_, ok := hostConfigs[host]
+	return ok
+}
+
 func (customEvaluator) Evaluate(req EvaluationRequest) Decision {
 	ctx := req.Context
 	r := req.HTTP

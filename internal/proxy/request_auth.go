@@ -44,13 +44,3 @@ func (a *requestAuth) ConsumeBasicAuth(expectedUser, expectedPassword string) bo
 	a.request.Header.Del("Authorization")
 	return true
 }
-
-type noRequestAuth struct{}
-
-func (noRequestAuth) HasValidCookie() bool {
-	return false
-}
-
-func (noRequestAuth) ConsumeBasicAuth(_, _ string) bool {
-	return false
-}

@@ -64,11 +64,12 @@ type EvaluationRequest struct {
 }
 
 type Evaluator interface {
-	Evaluate(req EvaluationRequest) Decision
-}
+	// IsKnownHost reports whether host has a configured policy. Evaluate is not
+	// called for requests whose host is unknown.
+	IsKnownHost(host string) bool
 
-type HTTPHostValidator interface {
-	IsAllowedHTTPHost(host string) bool
+	// Evaluate decides how to handle a request for a known host.
+	Evaluate(req EvaluationRequest) Decision
 }
 
 var evaluatorFactory func() Evaluator
