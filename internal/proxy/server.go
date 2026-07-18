@@ -30,6 +30,9 @@ import (
 )
 
 const cookieName = "picosrv_knock"
+
+// Access cookies are deliberately stateless and long-lived. Rotating the HMAC
+// secret is the simple, all-at-once revocation mechanism.
 const knockCookieTTL = 2 * 365 * 24 * time.Hour
 const defaultWebSocketIdleTimeout = 60 * time.Second
 const defaultWebSocketMaxConnections = 512

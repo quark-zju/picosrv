@@ -82,7 +82,7 @@ journalctl -u picosrv.service -f
 - **监听方式**：进程不直接绑定端口，由 systemd 通过 socket activation 传入已监听的 socket，因此重启服务不会丢失连接。默认监听 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加一个 `ListenStream=80` 的 socket 文件。
 - **证书加载**：根据 TLS SNI 从完整域名开始逐级向上查找 `cert-dir` 下的证书目录。已使用过的证书目录会按 `tls-reload-interval` 定时重载（默认 30 秒），无需重启。
 - **访问控制**：请求经过策略模块，根据 Host、Path、UA、Query、Cookie 等信息返回决策。内置策略拒绝所有请求；运行 `make config` 后由 `internal/config/custom_local.go` 提供实际策略。决策类型包括：反代到私有后端（保留入口 Host）、反代到外部 API（使用上游 Host，适合 LLM 网关）、文件服务、签发敲门 Cookie 并重定向、拒绝。
-- **敲门 Cookie**：`HttpOnly`、`Secure`、`SameSite=Lax`，默认有效期 2 年。
+- **敲门 Cookie**：`HttpOnly`、`Secure`、`SameSite=Lax`，默认有效期 2 年。Cookie 无单独吊销列表；轮换 `PICOSRV_HMAC_SECRET` 会立即使全部现有 Cookie 失效。
 - **日志**：统一输出 JSON 格式，便于 journald / Loki / ELK 等工具采集。
 
 ## 背景（为什么会有这个项目）
