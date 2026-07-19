@@ -88,8 +88,7 @@ make deploy-fail2ban
 sudo fail2ban-client status picosrv
 ```
 
-默认 10 分钟内 5 次认证失败则封禁来源 IP 1 小时；策略标记为
-`likely_abuse` 的请求单次命中即封禁 1 天。
+默认 10 分钟内 5 次认证失败则封禁来源 IP 1 小时；被配置逻辑标记为 `likely_abuse` 则单次命中即封禁 1 天。
 
 ## 运行机制
 
