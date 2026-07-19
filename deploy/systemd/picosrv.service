@@ -9,6 +9,7 @@ User=picosrv
 Group=picosrv
 ExecStart=/usr/local/bin/picosrv \
   --cert-dir /etc/picosrv/certs \
+  --http2 \
   --tls-reload-interval 30s
 EnvironmentFile=/etc/picosrv/picosrv.env
 Restart=always
