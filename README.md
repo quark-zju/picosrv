@@ -79,6 +79,17 @@ sudo systemctl enable --now picosrv.socket
 journalctl -u picosrv.service -f
 ```
 
+### 5. 可选：部署 fail2ban
+
+picosrv 会在适合计入封禁的请求日志中输出 `ban_candidate=true` 和具体的 `ban_reason`。安装发行版提供的 fail2ban 后，可部署仓库附带的 journald filter 和 jail：
+
+```bash
+make deploy-fail2ban
+sudo fail2ban-client status picosrv
+```
+
+默认规则在 10 分钟内出现 5 次候选请求后封禁来源 IP 1 小时。候选请求包括 picosrv Basic Auth 失败、本地策略拒绝，以及反代上游返回 401；上游 403 和 404 不会触发封禁。配置文件位于 `deploy/fail2ban/`，可在部署前调整阈值。
+
 ## 运行机制
 
 - **监听方式**：进程不直接绑定端口，由 systemd 通过 socket activation 传入已监听的 socket，因此重启服务不会丢失连接。默认监听 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加一个 `ListenStream=80` 的 socket 文件。

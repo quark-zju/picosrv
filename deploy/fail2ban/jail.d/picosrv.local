@@ -1,0 +1,11 @@
+[picosrv]
+enabled = true
+backend = systemd
+filter = picosrv
+port = http,https
+usedns = no
+
+# Ban an address for one hour after five candidate requests in ten minutes.
+findtime = 10m
+maxretry = 5
+bantime = 1h
