@@ -167,6 +167,15 @@ func TestBodyLengthAvailability(t *testing.T) {
 	}
 }
 
+func TestRemoveCookieFastPathPreservesHeaders(t *testing.T) {
+	header := http.Header{"Cookie": {"app_session=first", "preferences=compact"}}
+	removeCookie(header, cookieName)
+
+	if got := header.Values("Cookie"); !slices.Equal(got, []string{"app_session=first", "preferences=compact"}) {
+		t.Fatalf("Cookie headers = %#v, want original values", got)
+	}
+}
+
 func TestBanMetadata(t *testing.T) {
 	tests := []struct {
 		name          string

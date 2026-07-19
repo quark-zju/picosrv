@@ -473,6 +473,16 @@ func removeCookie(header http.Header, name string) {
 	if len(values) == 0 {
 		return
 	}
+	foundName := false
+	for _, value := range values {
+		if strings.Contains(value, name) {
+			foundName = true
+			break
+		}
+	}
+	if !foundName {
+		return
+	}
 
 	remaining := make([]string, 0, len(values))
 	for _, value := range values {
