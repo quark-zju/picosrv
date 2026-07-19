@@ -319,6 +319,7 @@ func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
 		r.SetURL(u)
 		r.Out.Host = stripDefaultPort(r.In.Host)
 		clearUnsafeRequestHeaders(r.Out.Header)
+		removeCookie(r.Out.Header, cookieName)
 		r.SetXForwarded()
 	})
 }
@@ -418,6 +419,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	clone.URL.Host = u.Host
 	clone.Host = stripDefaultPort(r.Host)
 	clearUnsafeRequestHeaders(clone.Header)
+	removeCookie(clone.Header, cookieName)
 	clearForwardedHeaders(clone.Header)
 	clearHopByHopRequestHeaders(clone.Header)
 	clone.Header.Set("X-Forwarded-Host", stripDefaultPort(r.Host))
@@ -458,6 +460,29 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target s
 	_ = clientConn.Close()
 	wg.Wait()
 	return true, nil
+}
+
+func removeCookie(header http.Header, name string) {
+	values := header.Values("Cookie")
+	if len(values) == 0 {
+		return
+	}
+
+	remaining := make([]string, 0, len(values))
+	for _, value := range values {
+		for part := range strings.SplitSeq(value, ";") {
+			part = strings.TrimSpace(part)
+			cookieName, _, found := strings.Cut(part, "=")
+			if part != "" && (!found || strings.TrimSpace(cookieName) != name) {
+				remaining = append(remaining, part)
+			}
+		}
+	}
+
+	header.Del("Cookie")
+	if len(remaining) > 0 {
+		header.Set("Cookie", strings.Join(remaining, "; "))
+	}
 }
 
 func copyWithReadIdleTimeout(dst net.Conn, src net.Conn, timeout time.Duration) (int64, error) {

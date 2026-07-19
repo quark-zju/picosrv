@@ -577,6 +577,7 @@ func TestKnockCookieFlow(t *testing.T) {
 	req2, _ := http.NewRequest(http.MethodGet, ts.URL+"/app", nil)
 	req2.Host = "example.local"
 	req2.AddCookie(knockCookie)
+	req2.AddCookie(&http.Cookie{Name: "app_session", Value: "app-secret"})
 	req2.Header.Set("X-Test-Compat", "should-be-forwarded")
 	req2.Header.Set("X-Middleware-Subrequest", "should-be-removed")
 	req2.Header.Set("X-Forwarded-For", "198.51.100.9")
@@ -600,6 +601,9 @@ func TestKnockCookieFlow(t *testing.T) {
 	}
 	select {
 	case hdr := <-headersSeen:
+		if got := hdr.Get("Cookie"); got != "app_session=app-secret" {
+			t.Fatalf("Cookie = %q, want only the application cookie", got)
+		}
 		if got := hdr.Get("X-Middleware-Subrequest"); got != "" {
 			t.Fatalf("expected empty x-middleware-subrequest, got %q", got)
 		}
@@ -1023,11 +1027,13 @@ func TestStaticFileServingRejectsParentTraversal(t *testing.T) {
 
 func TestWebSocketTunnel(t *testing.T) {
 	upgrader := websocket.Upgrader{}
+	headersSeen := make(chan http.Header, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !websocket.IsWebSocketUpgrade(r) {
 			http.Error(w, "upgrade required", http.StatusBadRequest)
 			return
 		}
+		headersSeen <- r.Header.Clone()
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
@@ -1063,6 +1069,7 @@ func TestWebSocketTunnel(t *testing.T) {
 
 	hdr := http.Header{}
 	hdr.Set("Host", "example.local")
+	hdr.Set("Cookie", cookieName+"=gateway-secret; app_session=app-secret")
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, hdr)
 	if err != nil {
 		if resp != nil {
@@ -1071,6 +1078,14 @@ func TestWebSocketTunnel(t *testing.T) {
 		t.Fatalf("dial websocket: %v", err)
 	}
 	defer conn.Close()
+	select {
+	case got := <-headersSeen:
+		if cookie := got.Get("Cookie"); cookie != "app_session=app-secret" {
+			t.Fatalf("Cookie = %q, want only the application cookie", cookie)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not observe upstream websocket request")
+	}
 
 	if err := conn.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		t.Fatal(err)
