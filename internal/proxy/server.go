@@ -173,6 +173,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusUnauthorized
 		http.Error(w, "unauthorized", status)
 	case config.DecisionIssueCookieAndRedirect:
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Cache-Control", "no-store")
 		if decision.SetCookie {
 			value, err := s.cookieAuth.Issue(knockCookieTTL, ctx.Host)
 			if err == nil {
@@ -258,13 +260,17 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	banCandidate, banReason := banMetadata(decision, status)
+	loggedPath := ctx.Path
+	if decision.Kind == config.DecisionIssueCookieAndRedirect {
+		loggedPath = "[redacted]"
+	}
 	s.logger.Info("request",
 		"client_ip", clientIP,
 		"remote_addr", r.RemoteAddr,
 		"method", r.Method,
 		"http_protocol", r.Proto,
 		"host", ctx.Host,
-		"path", ctx.Path,
+		"path", loggedPath,
 		"request_content_type", r.Header.Get("Content-Type"),
 		"request_body_length", knownLength(r.ContentLength, r.ContentLength >= 0 && !wsUpgrade),
 		"response_content_type", rw.Header().Get("Content-Type"),

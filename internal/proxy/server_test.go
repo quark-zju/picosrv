@@ -117,6 +117,42 @@ func TestAccessLogIncludesHTTPMetadata(t *testing.T) {
 	}
 }
 
+func TestKnockRedirectDoesNotLeakCredential(t *testing.T) {
+	var logs bytes.Buffer
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
+			return config.Decision{Kind: config.DecisionIssueCookieAndRedirect, RedirectPath: "/", SetCookie: true, Reason: "knock"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewJSONHandler(&logs, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "https://example.local/private-knock-token", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Errorf("Referrer-Policy = %q, want no-referrer", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+
+	var entry map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	if got := entry["path"]; got != "[redacted]" {
+		t.Errorf("logged path = %#v, want redacted", got)
+	}
+	if strings.Contains(logs.String(), "private-knock-token") {
+		t.Fatal("knock credential appeared in access log")
+	}
+}
+
 func TestBodyLengthAvailability(t *testing.T) {
 	if got := knownLength(-1, false); got != nil {
 		t.Fatalf("unknown request length = %#v, want nil", got)
