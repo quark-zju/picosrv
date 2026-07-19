@@ -42,6 +42,12 @@ var hostConfigs = map[string]hostConfig{
 	"llm-lan.example.com": {LLMGateway: true},
 }
 
+var knownBadPaths = map[string]struct{}{
+	"/.aws/credentials": {},
+	"/.env":             {},
+	"/.env.production":  {},
+}
+
 const (
 	openAIUpstream   = "https://api.openai.com"
 	deepSeekUpstream = "https://api.deepseek.com"
@@ -79,6 +85,11 @@ func (customEvaluator) Evaluate(req EvaluationRequest) Decision {
 	cfg, ok := hostConfigs[ctx.Host]
 	if !ok {
 		return Decision{Kind: DecisionDeny, Reason: "unknown_host"}
+	}
+	if _, bad := knownBadPaths[ctx.Path]; bad {
+		// The stricter fail2ban rule matches likely_abuse and bans a source
+		// after a single candidate request.
+		return Decision{Kind: DecisionDeny, Reason: "likely_abuse"}
 	}
 
 	if cfg.BasicAuth != nil && !req.Auth.ConsumeBasicAuth(cfg.BasicAuth.User, cfg.BasicAuth.Password) {
