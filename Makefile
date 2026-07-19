@@ -13,8 +13,8 @@ CONFIG_DIR ?= /etc/picosrv
 ENV_FILE ?= $(CONFIG_DIR)/picosrv.env
 CUSTOM_POLICY := internal/config/custom_local.go
 CUSTOM_POLICY_EXAMPLE := examples/custom_local.go.example
-FAIL2BAN_FILTER_SOURCE := deploy/fail2ban/filter.d/picosrv.conf
-FAIL2BAN_JAIL_SOURCE := deploy/fail2ban/jail.d/picosrv.local
+FAIL2BAN_FILTER_SOURCES := deploy/fail2ban/filter.d/picosrv.conf deploy/fail2ban/filter.d/picosrv-likely-abuse.conf
+FAIL2BAN_JAIL_SOURCES := deploy/fail2ban/jail.d/picosrv.local deploy/fail2ban/jail.d/picosrv-likely-abuse.local
 FAIL2BAN_FILTER_DIR ?= /etc/fail2ban/filter.d
 FAIL2BAN_JAIL_DIR ?= /etc/fail2ban/jail.d
 SUDO ?= sudo
@@ -50,8 +50,8 @@ install-fail2ban:
 		exit 1; \
 	fi
 	$(SUDO) install -d -m 755 $(FAIL2BAN_FILTER_DIR) $(FAIL2BAN_JAIL_DIR)
-	$(SUDO) install -m 644 $(FAIL2BAN_FILTER_SOURCE) $(FAIL2BAN_FILTER_DIR)/picosrv.conf
-	$(SUDO) install -m 644 $(FAIL2BAN_JAIL_SOURCE) $(FAIL2BAN_JAIL_DIR)/picosrv.local
+	$(SUDO) install -m 644 $(FAIL2BAN_FILTER_SOURCES) $(FAIL2BAN_FILTER_DIR)/
+	$(SUDO) install -m 644 $(FAIL2BAN_JAIL_SOURCES) $(FAIL2BAN_JAIL_DIR)/
 
 setup-user:
 	if ! getent group $(SERVICE_GROUP) >/dev/null; then \

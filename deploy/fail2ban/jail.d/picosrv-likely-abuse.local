@@ -1,0 +1,11 @@
+[picosrv-likely-abuse]
+enabled = true
+backend = systemd
+filter = picosrv-likely-abuse
+port = http,https
+usedns = no
+
+# One high-confidence abuse signal is enough to ban an address for one day.
+findtime = 10m
+maxretry = 1
+bantime = 1d
