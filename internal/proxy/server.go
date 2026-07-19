@@ -267,7 +267,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"request_content_type", r.Header.Get("Content-Type"),
 		"request_body_length", knownLength(r.ContentLength, r.ContentLength >= 0 && !wsUpgrade),
 		"response_content_type", rw.Header().Get("Content-Type"),
-		"response_body_length", knownLength(rw.bodyLength, !rw.streaming),
+		"response_body_length", knownLength(rw.bodyLength, !rw.hijacked),
 		"user_agent", truncateString(r.UserAgent(), maxLoggedUserAgentLength),
 		"status", status,
 		"upstream", upstream,
@@ -673,7 +673,7 @@ type statusCapture struct {
 	cachePolicy config.CachePolicy
 	wroteHeader bool
 	bodyLength  int64
-	streaming   bool
+	hijacked    bool
 }
 
 func newStatusCapture(w http.ResponseWriter, cachePolicy config.CachePolicy) *statusCapture {
@@ -706,7 +706,6 @@ func (s *statusCapture) WriteHeader(code int) {
 }
 
 func (s *statusCapture) Flush() {
-	s.streaming = true
 	if !s.wroteHeader {
 		s.WriteHeader(http.StatusOK)
 	}
@@ -719,7 +718,6 @@ func (s *statusCapture) FlushError() error {
 	type flushErrorer interface {
 		FlushError() error
 	}
-	s.streaming = true
 	if !s.wroteHeader {
 		s.WriteHeader(http.StatusOK)
 	}
@@ -736,7 +734,7 @@ func (s *statusCapture) FlushError() error {
 func (s *statusCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, readWriter, err := http.NewResponseController(s.ResponseWriter).Hijack()
 	if err == nil {
-		s.streaming = true
+		s.hijacked = true
 	}
 	return conn, readWriter, err
 }

@@ -116,7 +116,7 @@ func TestAccessLogIncludesHTTPMetadata(t *testing.T) {
 	}
 }
 
-func TestUnknownBodyLengthsAreEmpty(t *testing.T) {
+func TestBodyLengthAvailability(t *testing.T) {
 	if got := knownLength(-1, false); got != nil {
 		t.Fatalf("unknown request length = %#v, want nil", got)
 	}
@@ -125,8 +125,8 @@ func TestUnknownBodyLengthsAreEmpty(t *testing.T) {
 	capture := newStatusCapture(rec, config.CachePolicyDefault)
 	capture.Flush()
 	_, _ = capture.Write([]byte("streamed"))
-	if got := knownLength(capture.bodyLength, !capture.streaming); got != nil {
-		t.Fatalf("streaming response length = %#v, want nil", got)
+	if got := knownLength(capture.bodyLength, !capture.hijacked); got != int64(len("streamed")) {
+		t.Fatalf("completed streaming response length = %#v, want %d", got, len("streamed"))
 	}
 }
 
