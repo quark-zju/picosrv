@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -240,5 +241,48 @@ func slogErrorLog(logger *slog.Logger) *log.Logger {
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	}
-	return slog.NewLogLogger(logger.Handler(), slog.LevelError)
+	return log.New(&slogErrorWriter{logger: logger}, "", 0)
+}
+
+type slogErrorWriter struct {
+	logger *slog.Logger
+}
+
+func (w *slogErrorWriter) Write(p []byte) (int, error) {
+	message := strings.TrimSuffix(string(p), "\n")
+	remoteAddr, clientIP, tlsError, ok := parseTLSHandshakeError(message)
+	if !ok {
+		w.logger.Error(message)
+		return len(p), nil
+	}
+
+	w.logger.Error("TLS handshake error",
+		"client_ip", clientIP,
+		"remote_addr", remoteAddr,
+		"tls_error", tlsError,
+	)
+	return len(p), nil
+}
+
+func parseTLSHandshakeError(message string) (remoteAddr, clientIP, tlsError string, ok bool) {
+	const prefix = "http: TLS handshake error from "
+	rest, ok := strings.CutPrefix(message, prefix)
+	if !ok {
+		return "", "", "", false
+	}
+	remoteAddr, tlsError, ok = strings.Cut(rest, ": ")
+	if !ok || remoteAddr == "" || tlsError == "" {
+		return "", "", "", false
+	}
+	clientIP, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return "", "", "", false
+	}
+	if ip, _, hasZone := strings.Cut(clientIP, "%"); hasZone {
+		clientIP = ip
+	}
+	if net.ParseIP(clientIP) == nil {
+		return "", "", "", false
+	}
+	return remoteAddr, clientIP, tlsError, true
 }

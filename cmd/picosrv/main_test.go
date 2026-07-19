@@ -48,8 +48,55 @@ func TestSlogErrorLogEmitsJSON(t *testing.T) {
 	if got, want := entry["level"], "ERROR"; got != want {
 		t.Fatalf("level = %v, want %q", got, want)
 	}
-	if _, ok := entry["msg"].(string); !ok {
-		t.Fatalf("msg is missing or not a string: %v", entry["msg"])
+	if got, want := entry["msg"], "TLS handshake error"; got != want {
+		t.Fatalf("msg = %v, want %q", got, want)
+	}
+	if got, want := entry["client_ip"], "1.2.3.4"; got != want {
+		t.Fatalf("client_ip = %v, want %q", got, want)
+	}
+	if got, want := entry["remote_addr"], "1.2.3.4:1234"; got != want {
+		t.Fatalf("remote_addr = %v, want %q", got, want)
+	}
+	if got, want := entry["tls_error"], "missing SNI server name"; got != want {
+		t.Fatalf("tls_error = %v, want %q", got, want)
+	}
+}
+
+func TestSlogErrorLogParsesIPv6TLSClient(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	stdlog := slogErrorLog(logger)
+	stdlog.Print("http: TLS handshake error from [2001:db8::1]:443: missing SNI server name")
+
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("unmarshal log entry: %v", err)
+	}
+	if got, want := entry["client_ip"], "2001:db8::1"; got != want {
+		t.Fatalf("client_ip = %v, want %q", got, want)
+	}
+	if got, want := entry["remote_addr"], "[2001:db8::1]:443"; got != want {
+		t.Fatalf("remote_addr = %v, want %q", got, want)
+	}
+}
+
+func TestSlogErrorLogPreservesUnknownMessages(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	stdlog := slogErrorLog(logger)
+	stdlog.Print("http: unrelated server error")
+
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("unmarshal log entry: %v", err)
+	}
+	if got, want := entry["msg"], "http: unrelated server error"; got != want {
+		t.Fatalf("msg = %v, want %q", got, want)
+	}
+	if _, ok := entry["client_ip"]; ok {
+		t.Fatalf("unexpected client_ip in fallback entry: %v", entry)
 	}
 }
 
