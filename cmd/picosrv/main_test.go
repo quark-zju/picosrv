@@ -60,6 +60,15 @@ func TestSlogErrorLogEmitsJSON(t *testing.T) {
 	if got, want := entry["tls_error"], "missing SNI server name"; got != want {
 		t.Fatalf("tls_error = %v, want %q", got, want)
 	}
+	if got, want := entry["ban_candidate"], true; got != want {
+		t.Fatalf("ban_candidate = %v, want %v", got, want)
+	}
+	if got, want := entry["ban_reason"], "tls_handshake_failed"; got != want {
+		t.Fatalf("ban_reason = %v, want %q", got, want)
+	}
+	if got, want := entry["decision_reason"], ""; got != want {
+		t.Fatalf("decision_reason = %v, want %q", got, want)
+	}
 }
 
 func TestSlogErrorLogParsesIPv6TLSClient(t *testing.T) {
@@ -97,6 +106,61 @@ func TestSlogErrorLogPreservesUnknownMessages(t *testing.T) {
 	}
 	if _, ok := entry["client_ip"]; ok {
 		t.Fatalf("unexpected client_ip in fallback entry: %v", entry)
+	}
+}
+
+func TestTLSHandshakeBanMetadata(t *testing.T) {
+	tests := []struct {
+		name               string
+		tlsError           string
+		wantCandidate      bool
+		wantDecisionReason string
+		wantBanReason      string
+	}{
+		{
+			name:               "SSLv2 probe",
+			tlsError:           "tls: unsupported SSLv2 handshake received",
+			wantCandidate:      true,
+			wantDecisionReason: "likely_abuse",
+			wantBanReason:      "tls_handshake_failed",
+		},
+		{
+			name:          "missing SNI",
+			tlsError:      "missing SNI server name",
+			wantCandidate: true,
+			wantBanReason: "tls_handshake_failed",
+		},
+		{
+			name:          "unsupported TLS versions",
+			tlsError:      "tls: client offered only unsupported versions: [301 302]",
+			wantCandidate: true,
+			wantBanReason: "tls_handshake_failed",
+		},
+		{
+			name:          "plaintext HTTP",
+			tlsError:      "client sent an HTTP request to an HTTPS server",
+			wantCandidate: true,
+			wantBanReason: "tls_handshake_failed",
+		},
+		{name: "timeout", tlsError: "read tcp 192.0.2.1:443->198.51.100.2:1234: i/o timeout"},
+		{name: "EOF", tlsError: "EOF"},
+		{name: "connection reset", tlsError: "read tcp: connection reset by peer"},
+		{name: "unknown TLS error", tlsError: "tls: unexpected message"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate, decisionReason, banReason := tlsHandshakeBanMetadata(tt.tlsError)
+			if candidate != tt.wantCandidate {
+				t.Fatalf("banCandidate = %v, want %v", candidate, tt.wantCandidate)
+			}
+			if decisionReason != tt.wantDecisionReason {
+				t.Fatalf("decisionReason = %q, want %q", decisionReason, tt.wantDecisionReason)
+			}
+			if banReason != tt.wantBanReason {
+				t.Fatalf("banReason = %q, want %q", banReason, tt.wantBanReason)
+			}
+		})
 	}
 }
 

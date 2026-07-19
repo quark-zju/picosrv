@@ -255,11 +255,15 @@ func (w *slogErrorWriter) Write(p []byte) (int, error) {
 		w.logger.Error(message)
 		return len(p), nil
 	}
+	banCandidate, decisionReason, banReason := tlsHandshakeBanMetadata(tlsError)
 
 	w.logger.Error("TLS handshake error",
 		"client_ip", clientIP,
 		"remote_addr", remoteAddr,
 		"tls_error", tlsError,
+		"decision_reason", decisionReason,
+		"ban_candidate", banCandidate,
+		"ban_reason", banReason,
 	)
 	return len(p), nil
 }
@@ -285,4 +289,17 @@ func parseTLSHandshakeError(message string) (remoteAddr, clientIP, tlsError stri
 		return "", "", "", false
 	}
 	return remoteAddr, clientIP, tlsError, true
+}
+
+func tlsHandshakeBanMetadata(tlsError string) (banCandidate bool, decisionReason, banReason string) {
+	switch {
+	case tlsError == "tls: unsupported SSLv2 handshake received":
+		return true, "likely_abuse", "tls_handshake_failed"
+	case tlsError == "missing SNI server name",
+		strings.HasPrefix(tlsError, "tls: client offered only unsupported versions:"),
+		tlsError == "client sent an HTTP request to an HTTPS server":
+		return true, "", "tls_handshake_failed"
+	default:
+		return false, "", ""
+	}
 }
