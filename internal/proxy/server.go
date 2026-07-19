@@ -37,6 +37,7 @@ const knockCookieTTL = 2 * 365 * 24 * time.Hour
 const defaultWebSocketIdleTimeout = 60 * time.Second
 const immutableCacheControl = "public, max-age=31536000, immutable"
 const maxLoggedUserAgentLength = 256
+const truncationMarker = "..."
 
 type Options struct {
 	Evaluator                  config.Evaluator
@@ -289,7 +290,13 @@ func truncateString(value string, maxLength int) string {
 	if len(value) <= maxLength {
 		return value
 	}
-	return value[:maxLength]
+	if maxLength <= 0 {
+		return ""
+	}
+	if maxLength <= len(truncationMarker) {
+		return truncationMarker[:maxLength]
+	}
+	return value[:maxLength-len(truncationMarker)] + truncationMarker
 }
 
 func banMetadata(decision config.Decision, status int) (bool, string) {

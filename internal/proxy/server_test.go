@@ -107,7 +107,7 @@ func TestAccessLogIncludesHTTPMetadata(t *testing.T) {
 		"request_body_length":   float64(3),
 		"response_content_type": "text/plain; charset=utf-8",
 		"response_body_length":  float64(len("unauthorized\n")),
-		"user_agent":            strings.Repeat("a", maxLoggedUserAgentLength),
+		"user_agent":            strings.Repeat("a", maxLoggedUserAgentLength-len(truncationMarker)) + truncationMarker,
 	}
 	for field, want := range wants {
 		if got := entry[field]; got != want {
