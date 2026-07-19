@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -35,6 +36,7 @@ const cookieName = "picosrv_knock"
 const knockCookieTTL = 2 * 365 * 24 * time.Hour
 const defaultWebSocketIdleTimeout = 60 * time.Second
 const immutableCacheControl = "public, max-age=31536000, immutable"
+const maxLoggedUserAgentLength = 256
 
 type Options struct {
 	Evaluator                  config.Evaluator
@@ -147,6 +149,8 @@ func (s *Server) RedirectHandler() http.Handler {
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	clientIP := clientIPFromRemoteAddr(r.RemoteAddr)
+	rw := newStatusCapture(w, config.CachePolicyDefault)
+	w = rw
 	ctx := config.Context{Host: normalizeRequestHost(r.Host), Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
 	decision := config.Decision{Kind: config.DecisionDeny, Reason: "unknown_host"}
 	if s.evaluator.IsKnownHost(ctx.Host) {
@@ -212,7 +216,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("build proxy", "error", err)
 			break
 		}
-		rw := newStatusCapture(w, decision.CachePolicy)
+		rw.cachePolicy = decision.CachePolicy
 		proxy.ServeHTTP(rw, r)
 		rw.finish()
 		status = rw.status
@@ -230,7 +234,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("build external proxy", "error", err)
 			break
 		}
-		rw := newStatusCapture(w, decision.CachePolicy)
+		rw.cachePolicy = decision.CachePolicy
 		proxy.ServeHTTP(rw, r)
 		rw.finish()
 		status = rw.status
@@ -243,7 +247,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.logger.Error("build file server", "error", err, "root_dir", decision.RootDir)
 			break
 		}
-		rw := newStatusCapture(w, decision.CachePolicy)
+		rw.cachePolicy = decision.CachePolicy
 		handler.ServeHTTP(rw, r)
 		rw.finish()
 		status = rw.status
@@ -259,6 +263,11 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"method", r.Method,
 		"host", ctx.Host,
 		"path", ctx.Path,
+		"request_content_type", r.Header.Get("Content-Type"),
+		"request_body_length", knownLength(r.ContentLength, r.ContentLength >= 0 && !wsUpgrade),
+		"response_content_type", rw.Header().Get("Content-Type"),
+		"response_body_length", knownLength(rw.bodyLength, !rw.streaming),
+		"user_agent", truncateString(r.UserAgent(), maxLoggedUserAgentLength),
 		"status", status,
 		"upstream", upstream,
 		"latency_ms", time.Since(start).Milliseconds(),
@@ -267,6 +276,20 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"ban_reason", banReason,
 		"ws_upgrade", wsUpgrade,
 	)
+}
+
+func knownLength(length int64, known bool) any {
+	if !known {
+		return nil
+	}
+	return length
+}
+
+func truncateString(value string, maxLength int) string {
+	if len(value) <= maxLength {
+		return value
+	}
+	return value[:maxLength]
 }
 
 func banMetadata(decision config.Decision, status int) (bool, string) {
@@ -642,6 +665,8 @@ type statusCapture struct {
 	status      int
 	cachePolicy config.CachePolicy
 	wroteHeader bool
+	bodyLength  int64
+	streaming   bool
 }
 
 func newStatusCapture(w http.ResponseWriter, cachePolicy config.CachePolicy) *statusCapture {
@@ -652,7 +677,9 @@ func (s *statusCapture) Write(p []byte) (int, error) {
 	if !s.wroteHeader {
 		s.WriteHeader(http.StatusOK)
 	}
-	return s.ResponseWriter.Write(p)
+	n, err := s.ResponseWriter.Write(p)
+	s.bodyLength += int64(n)
+	return n, err
 }
 
 func (s *statusCapture) WriteHeader(code int) {
@@ -672,6 +699,7 @@ func (s *statusCapture) WriteHeader(code int) {
 }
 
 func (s *statusCapture) Flush() {
+	s.streaming = true
 	if !s.wroteHeader {
 		s.WriteHeader(http.StatusOK)
 	}
@@ -684,6 +712,7 @@ func (s *statusCapture) FlushError() error {
 	type flushErrorer interface {
 		FlushError() error
 	}
+	s.streaming = true
 	if !s.wroteHeader {
 		s.WriteHeader(http.StatusOK)
 	}
@@ -695,6 +724,14 @@ func (s *statusCapture) FlushError() error {
 		return nil
 	}
 	return http.ErrNotSupported
+}
+
+func (s *statusCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, readWriter, err := http.NewResponseController(s.ResponseWriter).Hijack()
+	if err == nil {
+		s.streaming = true
+	}
+	return conn, readWriter, err
 }
 
 func (s *statusCapture) Unwrap() http.ResponseWriter {

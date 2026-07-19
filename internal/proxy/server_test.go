@@ -2,12 +2,14 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -74,6 +76,57 @@ func TestDenyByDefault(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestAccessLogIncludesHTTPMetadata(t *testing.T) {
+	var logs bytes.Buffer
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
+			return config.Decision{Kind: config.DecisionRequireBasicAuth, Reason: "test"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewJSONHandler(&logs, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "https://example.local/private", strings.NewReader("abc"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", strings.Repeat("a", maxLoggedUserAgentLength+10))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	var entry map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
+		t.Fatal(err)
+	}
+	wants := map[string]any{
+		"request_content_type":  "application/json",
+		"request_body_length":   float64(3),
+		"response_content_type": "text/plain; charset=utf-8",
+		"response_body_length":  float64(len("unauthorized\n")),
+		"user_agent":            strings.Repeat("a", maxLoggedUserAgentLength),
+	}
+	for field, want := range wants {
+		if got := entry[field]; got != want {
+			t.Errorf("%s = %#v, want %#v", field, got, want)
+		}
+	}
+}
+
+func TestUnknownBodyLengthsAreEmpty(t *testing.T) {
+	if got := knownLength(-1, false); got != nil {
+		t.Fatalf("unknown request length = %#v, want nil", got)
+	}
+
+	rec := httptest.NewRecorder()
+	capture := newStatusCapture(rec, config.CachePolicyDefault)
+	capture.Flush()
+	_, _ = capture.Write([]byte("streamed"))
+	if got := knownLength(capture.bodyLength, !capture.streaming); got != nil {
+		t.Fatalf("streaming response length = %#v, want nil", got)
 	}
 }
 
