@@ -103,6 +103,7 @@ func TestAccessLogIncludesHTTPMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	wants := map[string]any{
+		"http_protocol":         "HTTP/1.1",
 		"request_content_type":  "application/json",
 		"request_body_length":   float64(3),
 		"response_content_type": "text/plain; charset=utf-8",

@@ -262,6 +262,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"client_ip", clientIP,
 		"remote_addr", r.RemoteAddr,
 		"method", r.Method,
+		"http_protocol", r.Proto,
 		"host", ctx.Host,
 		"path", ctx.Path,
 		"request_content_type", r.Header.Get("Content-Type"),
