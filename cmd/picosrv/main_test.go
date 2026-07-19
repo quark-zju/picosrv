@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"testing"
+	"time"
 )
 
 func TestLogErrEmitsJSON(t *testing.T) {
@@ -82,5 +84,67 @@ func TestParsePositiveInt(t *testing.T) {
 func TestParsePositiveIntRejectsZero(t *testing.T) {
 	if _, err := parsePositiveInt("0"); err == nil {
 		t.Fatal("expected zero to be rejected")
+	}
+}
+
+func TestConnectionLimiterSharesCapacity(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	limited := newConnectionLimiter(1).Wrap(listener)
+	firstClient, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstClient.Close()
+	firstServer, err := limited.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accepted := make(chan net.Conn, 1)
+	acceptErr := make(chan error, 1)
+	go func() {
+		conn, err := limited.Accept()
+		if err != nil {
+			acceptErr <- err
+			return
+		}
+		accepted <- conn
+	}()
+
+	secondClient, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondClient.Close()
+	if err := secondClient.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := secondClient.Read(make([]byte, 1)); err == nil {
+		t.Fatal("connection above the limit remained open")
+	} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		t.Fatal("timed out waiting for connection above the limit to close")
+	}
+
+	if err := firstServer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	thirdClient, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer thirdClient.Close()
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+	case err := <-acceptErr:
+		t.Fatal(err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("released capacity was not reusable")
 	}
 }

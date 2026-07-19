@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ const (
 	placeholderHMACSecret = "replace-with-long-random-secret"
 	minHMACSecretLength   = 16
 	defaultMaxHeaderBytes = 64 * 1024
+	defaultMaxConnections = 512
 )
 
 func main() {
@@ -34,7 +36,7 @@ func main() {
 		reloadIntervalRaw        = flag.String("tls-reload-interval", getenv("PICOSRV_TLS_RELOAD_INTERVAL", "30s"), "certificate reload interval")
 		responseHeaderTimeoutRaw = flag.String("proxy-response-header-timeout", getenv("PICOSRV_PROXY_RESPONSE_HEADER_TIMEOUT", "60s"), "timeout waiting for upstream response headers")
 		webSocketIdleTimeoutRaw  = flag.String("websocket-idle-timeout", getenv("PICOSRV_WEBSOCKET_IDLE_TIMEOUT", "60s"), "timeout waiting for upstream websocket data")
-		webSocketMaxConnsRaw     = flag.String("websocket-max-connections", getenv("PICOSRV_WEBSOCKET_MAX_CONNECTIONS", "512"), "maximum concurrent websocket connections")
+		maxConnectionsRaw        = flag.String("max-connections", getenv("PICOSRV_MAX_CONNECTIONS", strconv.Itoa(defaultMaxConnections)), "maximum concurrent TCP connections across all listeners")
 		maxHeaderBytesRaw        = flag.String("max-header-bytes", getenv("PICOSRV_MAX_HEADER_BYTES", strconv.Itoa(defaultMaxHeaderBytes)), "maximum request header bytes")
 		enableHTTP2              = flag.Bool("http2", false, "enable HTTP/2 on TLS listeners")
 	)
@@ -61,9 +63,9 @@ func main() {
 	if err != nil {
 		exitErr(logger, fmt.Errorf("invalid websocket-idle-timeout: %w", err))
 	}
-	webSocketMaxConns, err := parsePositiveInt(*webSocketMaxConnsRaw)
+	maxConnections, err := parsePositiveInt(*maxConnectionsRaw)
 	if err != nil {
-		exitErr(logger, fmt.Errorf("invalid websocket-max-connections: %w", err))
+		exitErr(logger, fmt.Errorf("invalid max-connections: %w", err))
 	}
 	maxHeaderBytes, err := parsePositiveInt(*maxHeaderBytesRaw)
 	if err != nil {
@@ -77,7 +79,6 @@ func main() {
 		TLSReloadInterval:          reloadInterval,
 		ProxyResponseHeaderTimeout: responseHeaderTimeout,
 		WebSocketIdleTimeout:       webSocketIdleTimeout,
-		WebSocketMaxConnections:    webSocketMaxConns,
 		EnableHTTP2:                *enableHTTP2,
 		Logger:                     logger,
 	})
@@ -96,9 +97,10 @@ func main() {
 
 	errCh := make(chan error, len(listeners))
 	httpServers := make([]*http.Server, 0, len(listeners))
+	connectionLimit := newConnectionLimiter(maxConnections)
 
 	for _, activated := range listeners {
-		ln := activated.Listener
+		ln := connectionLimit.Wrap(activated.Listener)
 		isHTTPRedirect := shouldRedirectHTTP(ln)
 		h := srv.Handler()
 		if isHTTPRedirect {
@@ -141,6 +143,50 @@ func main() {
 		_ = s.Shutdown(shutdownCtx)
 	}
 	srv.CloseIdleConnections()
+}
+
+type connectionLimiter struct {
+	tokens chan struct{}
+}
+
+func newConnectionLimiter(max int) *connectionLimiter {
+	return &connectionLimiter{tokens: make(chan struct{}, max)}
+}
+
+func (l *connectionLimiter) Wrap(listener net.Listener) net.Listener {
+	return &limitedListener{Listener: listener, limiter: l}
+}
+
+type limitedListener struct {
+	net.Listener
+	limiter *connectionLimiter
+}
+
+func (l *limitedListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		select {
+		case l.limiter.tokens <- struct{}{}:
+			return &limitedConn{Conn: conn, release: func() { <-l.limiter.tokens }}, nil
+		default:
+			_ = conn.Close()
+		}
+	}
+}
+
+type limitedConn struct {
+	net.Conn
+	once    sync.Once
+	release func()
+}
+
+func (c *limitedConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.release)
+	return err
 }
 
 func shouldRedirectHTTP(ln net.Listener) bool {
