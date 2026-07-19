@@ -81,19 +81,19 @@ journalctl -u picosrv.service -f
 
 ### 5. 可选：部署 fail2ban
 
-picosrv 会在适合计入封禁的请求日志中输出 `ban_candidate=true` 和具体的 `ban_reason`。安装发行版提供的 fail2ban 后，可部署仓库附带的 journald filter 和 jail：
+picosrv 日志在认证失败时包含 `"ban_candidate":true`。安装 fail2ban 后，可部署相关规则：
 
 ```bash
 make deploy-fail2ban
 sudo fail2ban-client status picosrv
 ```
 
-默认规则在 10 分钟内出现 5 次候选请求后封禁来源 IP 1 小时。候选请求包括 picosrv Basic Auth 失败、本地策略拒绝，以及反代上游返回 401；上游 403 和 404 不会触发封禁。配置文件位于 `deploy/fail2ban/`，可在部署前调整阈值。
+默认 10 分钟内 5 次认证失败则封禁来源 IP 1 小时。
 
 ## 运行机制
 
 - **监听方式**：进程不直接绑定端口，由 systemd 通过 socket activation 传入已监听的 socket，因此重启服务不会丢失连接。默认监听 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加一个 `ListenStream=80` 的 socket 文件。
-- **HTTP 协议**：程序本身默认使用 HTTP/1.1；传入 `--http2` 可在 TLS 监听器上通过 ALPN 启用 HTTP/2。仓库附带的 systemd service 默认传入该参数。
+- **HTTP 协议**：`--http2` 启用 HTTP/2。默认 systemd 配置启用 HTTP/2。
 - **连接上限**：`--max-connections`（或 `PICOSRV_MAX_CONNECTIONS`）限制所有监听器共享的 TCP 连接总数，默认 512；HTTP、SSE 和 WebSocket 使用同一个配额。
 - **证书加载**：根据 TLS SNI 从完整域名开始逐级向上查找 `cert-dir` 下的证书目录。已使用过的证书目录会按 `tls-reload-interval` 定时重载（默认 30 秒），无需重启。
 - **访问控制**：请求经过策略模块，根据 Host、Path、UA、Query、Cookie 等信息返回决策。内置策略拒绝所有请求；运行 `make config` 后由 `internal/config/custom_local.go` 提供实际策略。决策类型包括：反代到私有后端（保留入口 Host）、反代到外部 API（使用上游 Host，适合内网 LLM 网关）、文件服务、签发敲门 Cookie 并重定向、拒绝。
