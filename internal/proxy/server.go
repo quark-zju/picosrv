@@ -252,6 +252,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}
 
+	banCandidate, banReason := banMetadata(decision, status)
 	s.logger.Info("request",
 		"client_ip", clientIP,
 		"remote_addr", r.RemoteAddr,
@@ -262,8 +263,24 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		"upstream", upstream,
 		"latency_ms", time.Since(start).Milliseconds(),
 		"decision_reason", decision.Reason,
+		"ban_candidate", banCandidate,
+		"ban_reason", banReason,
 		"ws_upgrade", wsUpgrade,
 	)
+}
+
+func banMetadata(decision config.Decision, status int) (bool, string) {
+	switch {
+	case decision.Kind == config.DecisionRequireBasicAuth && status == http.StatusUnauthorized:
+		return true, "basic_auth_failed"
+	case decision.Kind == config.DecisionDeny && status == http.StatusNotFound:
+		return true, "policy_denied"
+	case (decision.Kind == config.DecisionAllowProxy || decision.Kind == config.DecisionAllowExternalProxy) && status == http.StatusUnauthorized:
+		return true, "upstream_basic_auth_failed"
+	}
+	// Upstream 403 can be an ordinary authorization decision, and upstream 404
+	// commonly means a missing application resource. Neither is a ban signal.
+	return false, ""
 }
 
 func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {

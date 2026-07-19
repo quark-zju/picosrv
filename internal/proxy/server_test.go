@@ -77,6 +77,64 @@ func TestDenyByDefault(t *testing.T) {
 	}
 }
 
+func TestBanMetadata(t *testing.T) {
+	tests := []struct {
+		name          string
+		decision      config.Decision
+		status        int
+		wantCandidate bool
+		wantReason    string
+	}{
+		{
+			name:          "basic auth failure",
+			decision:      config.Decision{Kind: config.DecisionRequireBasicAuth},
+			status:        http.StatusUnauthorized,
+			wantCandidate: true,
+			wantReason:    "basic_auth_failed",
+		},
+		{
+			name:          "local policy denial",
+			decision:      config.Decision{Kind: config.DecisionDeny},
+			status:        http.StatusNotFound,
+			wantCandidate: true,
+			wantReason:    "policy_denied",
+		},
+		{
+			name:          "private upstream auth failure",
+			decision:      config.Decision{Kind: config.DecisionAllowProxy},
+			status:        http.StatusUnauthorized,
+			wantCandidate: true,
+			wantReason:    "upstream_basic_auth_failed",
+		},
+		{
+			name:          "external upstream auth failure",
+			decision:      config.Decision{Kind: config.DecisionAllowExternalProxy},
+			status:        http.StatusUnauthorized,
+			wantCandidate: true,
+			wantReason:    "upstream_basic_auth_failed",
+		},
+		{
+			name:     "upstream forbidden",
+			decision: config.Decision{Kind: config.DecisionAllowProxy},
+			status:   http.StatusForbidden,
+		},
+		{
+			name:     "upstream not found",
+			decision: config.Decision{Kind: config.DecisionAllowProxy},
+			status:   http.StatusNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate, reason := banMetadata(tt.decision, tt.status)
+			if candidate != tt.wantCandidate || reason != tt.wantReason {
+				t.Fatalf("ban metadata = (%v, %q), want (%v, %q)", candidate, reason, tt.wantCandidate, tt.wantReason)
+			}
+		})
+	}
+}
+
 func TestTLSConfigHTTP2(t *testing.T) {
 	tests := []struct {
 		name    string
