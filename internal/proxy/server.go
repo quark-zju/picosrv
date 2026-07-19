@@ -46,6 +46,7 @@ type Options struct {
 	ProxyResponseHeaderTimeout time.Duration
 	WebSocketIdleTimeout       time.Duration
 	WebSocketMaxConnections    int
+	EnableHTTP2                bool
 	Logger                     *slog.Logger
 	ProxyTransport             *http.Transport
 }
@@ -61,6 +62,7 @@ type Server struct {
 	wsTimeout   time.Duration
 	wsMaxConns  int64
 	wsActive    atomic.Int64
+	enableHTTP2 bool
 }
 
 func New(opts Options) (*Server, error) {
@@ -84,12 +86,13 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s := &Server{
-		evaluator:  opts.Evaluator,
-		cookieAuth: newCookieSigner(opts.HMACSecret),
-		logger:     opts.Logger,
-		transport:  opts.ProxyTransport,
-		wsTimeout:  opts.WebSocketIdleTimeout,
-		wsMaxConns: int64(opts.WebSocketMaxConnections),
+		evaluator:   opts.Evaluator,
+		cookieAuth:  newCookieSigner(opts.HMACSecret),
+		logger:      opts.Logger,
+		transport:   opts.ProxyTransport,
+		wsTimeout:   opts.WebSocketIdleTimeout,
+		wsMaxConns:  int64(opts.WebSocketMaxConnections),
+		enableHTTP2: opts.EnableHTTP2,
 	}
 
 	if opts.CertDir != "" {
@@ -111,7 +114,11 @@ func (s *Server) TLSConfig() *tls.Config {
 	if s.tlsState == nil {
 		return nil
 	}
-	return &tls.Config{GetCertificate: s.tlsState.GetCertificate, MinVersion: tls.VersionTLS12}
+	config := &tls.Config{GetCertificate: s.tlsState.GetCertificate, MinVersion: tls.VersionTLS12}
+	if s.enableHTTP2 {
+		config.NextProtos = []string{"h2", "http/1.1"}
+	}
+	return config
 }
 
 func (s *Server) RunCertReloader(ctx context.Context) {

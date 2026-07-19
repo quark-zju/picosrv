@@ -36,6 +36,7 @@ func main() {
 		webSocketIdleTimeoutRaw  = flag.String("websocket-idle-timeout", getenv("PICOSRV_WEBSOCKET_IDLE_TIMEOUT", "60s"), "timeout waiting for upstream websocket data")
 		webSocketMaxConnsRaw     = flag.String("websocket-max-connections", getenv("PICOSRV_WEBSOCKET_MAX_CONNECTIONS", "512"), "maximum concurrent websocket connections")
 		maxHeaderBytesRaw        = flag.String("max-header-bytes", getenv("PICOSRV_MAX_HEADER_BYTES", strconv.Itoa(defaultMaxHeaderBytes)), "maximum request header bytes")
+		enableHTTP2              = flag.Bool("http2", false, "enable HTTP/2 on TLS listeners")
 	)
 	flag.Parse()
 
@@ -77,6 +78,7 @@ func main() {
 		ProxyResponseHeaderTimeout: responseHeaderTimeout,
 		WebSocketIdleTimeout:       webSocketIdleTimeout,
 		WebSocketMaxConnections:    webSocketMaxConns,
+		EnableHTTP2:                *enableHTTP2,
 		Logger:                     logger,
 	})
 	if err != nil {

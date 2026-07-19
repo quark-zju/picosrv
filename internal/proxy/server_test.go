@@ -77,6 +77,25 @@ func TestDenyByDefault(t *testing.T) {
 	}
 }
 
+func TestTLSConfigHTTP2(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+		want    []string
+	}{
+		{name: "disabled", want: nil},
+		{name: "enabled", enabled: true, want: []string{"h2", "http/1.1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := &Server{tlsState: &tlsCertState{}, enableHTTP2: tt.enabled}
+			if got := srv.TLSConfig().NextProtos; !slices.Equal(got, tt.want) {
+				t.Fatalf("NextProtos = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProxyAppliesImmutableCachePolicy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
