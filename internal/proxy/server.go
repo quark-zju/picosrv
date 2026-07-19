@@ -29,7 +29,7 @@ import (
 	"picosrv/internal/config"
 )
 
-const cookieName = "picosrv_knock"
+const cookieName = "__Host-picosrv_knock"
 
 // Access cookies are deliberately stateless and long-lived. Rotating the HMAC
 // secret is the simple, all-at-once revocation mechanism.

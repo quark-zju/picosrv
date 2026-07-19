@@ -606,6 +606,12 @@ func TestKnockCookieFlow(t *testing.T) {
 	if knockCookie.MaxAge != int(knockCookieTTL.Seconds()) {
 		t.Fatalf("knock cookie MaxAge = %d, want %d", knockCookie.MaxAge, int(knockCookieTTL.Seconds()))
 	}
+	if !knockCookie.Secure || knockCookie.Path != "/" || knockCookie.Domain != "" {
+		t.Fatalf("knock cookie does not satisfy __Host- requirements: %#v", knockCookie)
+	}
+	if knockCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("knock cookie SameSite = %v, want Lax", knockCookie.SameSite)
+	}
 
 	crossHostReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/app", nil)
 	crossHostReq.Host = "other.example.local"
