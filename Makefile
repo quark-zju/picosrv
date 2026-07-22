@@ -18,14 +18,22 @@ FAIL2BAN_JAIL_SOURCES := deploy/fail2ban/jail.d/picosrv.local deploy/fail2ban/ja
 FAIL2BAN_FILTER_DIR ?= /etc/fail2ban/filter.d
 FAIL2BAN_JAIL_DIR ?= /etc/fail2ban/jail.d
 SUDO ?= sudo
+PYTHON ?= python3
+NFT_RULES_SCRIPT := scripts/nft_rules.py
 
-.PHONY: build test install install-secret install-systemd install-fail2ban setup-user config deploy deploy-fail2ban
+.PHONY: build test test-nft-rules nft-rules install install-secret install-systemd install-fail2ban setup-user config deploy deploy-fail2ban
 
 build:
 	go build -o $(BUILD_OUTPUT) $(BUILD_TARGET)
 
 test:
 	go test ./...
+
+test-nft-rules:
+	PYTHONPYCACHEPREFIX=/tmp/picosrv-pycache $(PYTHON) -m unittest discover -s scripts -p '*_test.py'
+
+nft-rules:
+	CC="$${CC:-CN US}" $(PYTHON) $(NFT_RULES_SCRIPT)
 
 install: build
 	$(SUDO) install -m 755 $(BUILD_OUTPUT) $(TMP_INSTALL_PATH)

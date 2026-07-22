@@ -90,6 +90,19 @@ sudo fail2ban-client status picosrv
 
 默认 10 分钟内 5 次认证失败则封禁来源 IP 1 小时；被配置逻辑标记为 `likely_abuse` 则单次命中即封禁 1 天。
 
+### 6. 可选：生成国家访问规则
+
+安装 `location`（libloc）后，可生成仅允许指定国家访问 HTTPS 的 nftables 规则。
+
+```bash
+# View rules
+CC="CN US" make nft-rules
+# Apply rules
+CC="CN US" sudo -E python3 scripts/nft_rules.py --apply
+```
+
+应用前会确认每个国家都返回了有效 IP 网段；任何查询失败或空结果都会终止，不会调用 `nft`。
+
 ## 运行机制
 
 - **监听方式**：进程不直接绑定端口，由 systemd 通过 socket activation 传入已监听的 socket，因此重启服务不会丢失连接。默认监听 443（HTTPS）。如需 HTTP→HTTPS 重定向，额外添加一个 `ListenStream=80` 的 socket 文件。
