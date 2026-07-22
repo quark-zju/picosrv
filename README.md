@@ -101,7 +101,18 @@ CC="CN US" make nft-rules
 CC="CN US" sudo -E python3 scripts/nft_rules.py --apply
 ```
 
-应用前会确认每个国家都返回了有效 IP 网段；任何查询失败或空结果都会终止，不会调用 `nft`。
+IP 地址 (libloc-database) 随时间变化。部署每日更新 systemd 计划任务：
+
+```bash
+CC="CN US" make deploy-nft-rules
+```
+
+国家列表保存在 `/etc/picosrv/nft-rules.env`。
+
+```bash
+sudo systemctl start picosrv-nft-rules.service
+sudo systemctl status picosrv-nft-rules.timer
+```
 
 ## 运行机制
 
