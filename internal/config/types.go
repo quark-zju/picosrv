@@ -61,7 +61,12 @@ type Decision struct {
 	// Upstream and RootDir should come from finite, administrator-controlled
 	// configuration. Unbounded request-derived values grow cached handlers for
 	// the lifetime of the process.
-	Upstream     string
+	Upstream string
+	// UpstreamHost, when non-empty, overrides the Host header sent to an
+	// internal proxy upstream. This is useful for loopback-bound applications
+	// (such as dsh web) whose trusted-host checks require their local authority.
+	// It does not affect the public Host used for policy evaluation.
+	UpstreamHost string
 	RootDir      string
 	Reason       string
 	RedirectPath string
