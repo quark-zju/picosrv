@@ -26,10 +26,10 @@ type hostConfig struct {
 
 type basicAuthConfig struct {
 	User     string
-	Password config.Password
+	Password Password
 }
 
-func basicAuth(user string, password config.Password) *basicAuthConfig {
+func basicAuth(user string, password Password) *basicAuthConfig {
 	return &basicAuthConfig{User: user, Password: password}
 }
 
@@ -37,7 +37,7 @@ var hostConfigs = map[string]hostConfig{
 	"app.example.com":    {Upstream: "http://127.0.0.1:8081", NeedKnock: true},
 	"public.example.com": {Upstream: "http://127.0.0.1:8082"},
 	// Replace both Basic Auth placeholders before enabling this host.
-	"basic.example.com":   {Upstream: "http://127.0.0.1:8083", BasicAuth: basicAuth("replace-user", config.PlainPassword("replace-password"))},
+	"basic.example.com":   {Upstream: "http://127.0.0.1:8083", BasicAuth: basicAuth("replace-user", PlainPassword("replace-password"))},
 	"files.example.com":   {RootDir: "/srv/files.example.com"},
 	"llm-lan.example.com": {LLMGateway: true},
 }
