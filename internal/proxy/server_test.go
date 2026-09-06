@@ -178,18 +178,27 @@ func TestRemoveCookieFastPathPreservesHeaders(t *testing.T) {
 
 func TestBanMetadata(t *testing.T) {
 	tests := []struct {
-		name          string
-		decision      config.Decision
-		status        int
-		wantCandidate bool
-		wantReason    string
+		name             string
+		decision         config.Decision
+		status           int
+		basicAuthPresent bool
+		wantCandidate    bool
+		wantReason       string
 	}{
 		{
-			name:          "basic auth failure",
+			name:             "basic auth wrong password",
+			decision:         config.Decision{Kind: config.DecisionRequireBasicAuth},
+			status:           http.StatusUnauthorized,
+			basicAuthPresent: true,
+			wantCandidate:    true,
+			wantReason:       "basic_auth_failed",
+		},
+		{
+			name:          "basic auth no credentials",
 			decision:      config.Decision{Kind: config.DecisionRequireBasicAuth},
 			status:        http.StatusUnauthorized,
-			wantCandidate: true,
-			wantReason:    "basic_auth_failed",
+			wantCandidate: false,
+			wantReason:    "basic_auth_missing",
 		},
 		{
 			name:          "local policy denial",
@@ -226,7 +235,7 @@ func TestBanMetadata(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			candidate, reason := banMetadata(tt.decision, tt.status)
+			candidate, reason := banMetadata(tt.decision, tt.status, tt.basicAuthPresent)
 			if candidate != tt.wantCandidate || reason != tt.wantReason {
 				t.Fatalf("ban metadata = (%v, %q), want (%v, %q)", candidate, reason, tt.wantCandidate, tt.wantReason)
 			}

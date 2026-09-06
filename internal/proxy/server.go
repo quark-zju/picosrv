@@ -154,8 +154,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	w = rw
 	ctx := config.Context{Host: normalizeRequestHost(r.Host), Path: r.URL.Path, UA: r.UserAgent(), Query: r.URL.Query()}
 	decision := config.Decision{Kind: config.DecisionDeny, Reason: "unknown_host"}
+	var auth *requestAuth
 	if s.evaluator.IsKnownHost(ctx.Host) {
-		auth := &requestAuth{request: r, cookieAuth: s.cookieAuth, host: ctx.Host}
+		auth = &requestAuth{request: r, cookieAuth: s.cookieAuth, host: ctx.Host}
 		decision = s.evaluator.Evaluate(config.EvaluationRequest{Context: ctx, HTTP: r, Auth: auth})
 	}
 
@@ -259,7 +260,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}
 
-	banCandidate, banReason := banMetadata(decision, status)
+	banCandidate, banReason := banMetadata(decision, status, auth != nil && auth.basicAuthCredentialsPresent)
 	loggedPath := ctx.Path
 	if decision.Kind == config.DecisionIssueCookieAndRedirect {
 		loggedPath = "[redacted]"
@@ -306,10 +307,18 @@ func truncateString(value string, maxLength int) string {
 	return value[:maxLength-len(truncationMarker)] + truncationMarker
 }
 
-func banMetadata(decision config.Decision, status int) (bool, string) {
+// banMetadata reports whether a request should be treated as a fail2ban
+// candidate. For a failed Basic Auth challenge it only flags requests that
+// actually presented (wrong) credentials: a request that supplied no Basic
+// header at all is likely a browser passively loading a page, not an attacker,
+// so it is not a ban candidate.
+func banMetadata(decision config.Decision, status int, basicAuthCredentialsPresent bool) (bool, string) {
 	switch {
 	case decision.Kind == config.DecisionRequireBasicAuth && status == http.StatusUnauthorized:
-		return true, "basic_auth_failed"
+		if basicAuthCredentialsPresent {
+			return true, "basic_auth_failed"
+		}
+		return false, "basic_auth_missing"
 	case decision.Kind == config.DecisionDeny && status == http.StatusNotFound:
 		return true, "policy_denied"
 	case (decision.Kind == config.DecisionAllowProxy || decision.Kind == config.DecisionAllowExternalProxy) && status == http.StatusUnauthorized:

@@ -16,6 +16,13 @@ type requestAuth struct {
 
 	cookieChecked bool
 	cookieValid   bool
+
+	// basicAuthCredentialsPresent reports whether the request carried a
+	// decodable HTTP Basic Authorization header. It lets the ban metadata
+	// distinguish a wrong-password attempt (a ban candidate) from a request
+	// that simply supplied no Basic credentials (not a ban candidate), e.g. a
+	// browser passively loading a page.
+	basicAuthCredentialsPresent bool
 }
 
 func (a *requestAuth) HasValidCookie() bool {
@@ -30,6 +37,7 @@ func (a *requestAuth) HasValidCookie() bool {
 
 func (a *requestAuth) ConsumeBasicAuth(expectedUser string, expectedPassword config.Password) bool {
 	user, credentialPassword, ok := a.request.BasicAuth()
+	a.basicAuthCredentialsPresent = ok
 	if !ok {
 		return false
 	}
