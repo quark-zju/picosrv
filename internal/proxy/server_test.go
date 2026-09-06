@@ -441,7 +441,7 @@ func TestBasicAuthCredentialsAreNotForwarded(t *testing.T) {
 
 	srv, err := New(Options{
 		Evaluator: staticEvaluator{fn: func(req config.EvaluationRequest) config.Decision {
-			if !req.Auth.ConsumeBasicAuth("alice", "secret") {
+			if !req.Auth.ConsumeBasicAuth("alice", config.PlainPassword("secret")) {
 				return config.Decision{Kind: config.DecisionRequireBasicAuth, Realm: "private", Reason: "basic_auth"}
 			}
 			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "basic_auth"}

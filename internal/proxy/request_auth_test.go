@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"picosrv/internal/config"
 )
 
 func TestConsumeBasicAuth(t *testing.T) {
@@ -14,7 +16,7 @@ func TestConsumeBasicAuth(t *testing.T) {
 		user             string
 		password         string
 		expectedUser     string
-		expectedPassword any
+		expectedPassword config.Password
 		wantValid        bool
 		wantHeader       bool
 	}{
@@ -23,7 +25,7 @@ func TestConsumeBasicAuth(t *testing.T) {
 			user:             "alice",
 			password:         "correct horse battery staple",
 			expectedUser:     "alice",
-			expectedPassword: "correct horse battery staple",
+			expectedPassword: config.PlainPassword("correct horse battery staple"),
 			wantValid:        true,
 		},
 		{
@@ -31,7 +33,7 @@ func TestConsumeBasicAuth(t *testing.T) {
 			user:             "alice",
 			password:         "correct horse battery staple",
 			expectedUser:     "alice",
-			expectedPassword: Sha256Encoded(fmt.Sprintf("%x", sha256.Sum256([]byte("correct horse battery staple")))),
+			expectedPassword: config.Sha256Encoded(fmt.Sprintf("%x", sha256.Sum256([]byte("correct horse battery staple")))),
 			wantValid:        true,
 		},
 		{
@@ -39,7 +41,7 @@ func TestConsumeBasicAuth(t *testing.T) {
 			user:             "mallory",
 			password:         "correct horse battery staple",
 			expectedUser:     "alice",
-			expectedPassword: "correct horse battery staple",
+			expectedPassword: config.PlainPassword("correct horse battery staple"),
 			wantHeader:       true,
 		},
 		{
@@ -47,7 +49,7 @@ func TestConsumeBasicAuth(t *testing.T) {
 			user:             "alice",
 			password:         "wrong",
 			expectedUser:     "alice",
-			expectedPassword: "correct horse battery staple",
+			expectedPassword: config.PlainPassword("correct horse battery staple"),
 			wantHeader:       true,
 		},
 	}

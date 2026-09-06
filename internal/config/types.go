@@ -1,8 +1,29 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 )
+
+// Password provides the SHA-256 hexadecimal representation used by Basic Auth.
+type Password interface {
+	SHA256Encoded() string
+}
+
+// PlainPassword identifies a password that should be hashed before comparison.
+type PlainPassword string
+
+func (p PlainPassword) SHA256Encoded() string {
+	hash := sha256.Sum256([]byte(p))
+	return hex.EncodeToString(hash[:])
+}
+
+// Sha256Encoded identifies a password that is already encoded as a SHA-256
+// hexadecimal digest.
+type Sha256Encoded string
+
+func (p Sha256Encoded) SHA256Encoded() string { return string(p) }
 
 type DecisionKind int
 
@@ -67,10 +88,10 @@ type RequestAuth interface {
 	HasValidCookie() bool
 
 	// ConsumeBasicAuth validates the request's HTTP Basic credentials against
-	// user and password. A string is treated as a plain password; implementations
-	// may provide an explicitly encoded password value. On success it removes
-	// the Authorization header so the credentials cannot be forwarded upstream.
-	ConsumeBasicAuth(user string, password any) bool
+	// user and password. Use PlainPassword for a plaintext password or
+	// Sha256Encoded for an already encoded digest. On success it removes the
+	// Authorization header so the credentials cannot be forwarded upstream.
+	ConsumeBasicAuth(user string, password Password) bool
 }
 
 // EvaluationRequest contains the normalized request data and request-scoped
