@@ -201,7 +201,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case config.DecisionAllowProxy:
 		upstream = decision.Upstream
 		if wsUpgrade {
-			hijacked, err := s.proxyWebSocket(w, r, decision.Upstream, decision.UpstreamHost)
+			hijacked, err := s.proxyWebSocket(w, r, decision.Upstream)
 			if err != nil {
 				status = http.StatusBadGateway
 				if !hijacked {
@@ -213,7 +213,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusSwitchingProtocols
 			break
 		}
-		proxy, err := s.proxyFor(decision.Upstream, decision.UpstreamHost)
+		proxy, err := s.proxyFor(decision.Upstream)
 		if err != nil {
 			status = http.StatusBadGateway
 			http.Error(w, "bad gateway", status)
@@ -329,13 +329,10 @@ func banMetadata(decision config.Decision, status int, basicAuthCredentialsPrese
 	return false, ""
 }
 
-func (s *Server) proxyFor(target, upstreamHost string) (*httputil.ReverseProxy, error) {
-	return s.reverseProxyFor("internal:"+target+"\x00"+upstreamHost, target, func(r *httputil.ProxyRequest, u *url.URL) {
+func (s *Server) proxyFor(target string) (*httputil.ReverseProxy, error) {
+	return s.reverseProxyFor("internal:"+target, target, func(r *httputil.ProxyRequest, u *url.URL) {
 		r.SetURL(u)
 		r.Out.Host = stripDefaultPort(r.In.Host)
-		if upstreamHost != "" {
-			r.Out.Host = upstreamHost
-		}
 		clearUnsafeRequestHeaders(r.Out.Header)
 		removeCookie(r.Out.Header, cookieName)
 		r.SetXForwarded()
@@ -399,7 +396,7 @@ func (s *Server) fileServerFor(rootDir string) (http.Handler, error) {
 	return handler.handler, nil
 }
 
-func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target, upstreamHost string) (bool, error) {
+func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target string) (bool, error) {
 	u, err := url.Parse(target)
 	if err != nil {
 		return false, err
@@ -436,9 +433,6 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, target, 
 	clone.URL.Scheme = "http"
 	clone.URL.Host = u.Host
 	clone.Host = stripDefaultPort(r.Host)
-	if upstreamHost != "" {
-		clone.Host = upstreamHost
-	}
 	clearUnsafeRequestHeaders(clone.Header)
 	removeCookie(clone.Header, cookieName)
 	clearForwardedHeaders(clone.Header)

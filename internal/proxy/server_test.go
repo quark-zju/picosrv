@@ -741,43 +741,6 @@ func TestAllowProxyPreservesInboundHost(t *testing.T) {
 	}
 }
 
-func TestAllowProxyOverridesUpstreamHost(t *testing.T) {
-	hostSeen := make(chan string, 1)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hostSeen <- r.Host
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer upstream.Close()
-
-	srv, err := New(Options{
-		Evaluator: staticEvaluator{fn: func(_ config.EvaluationRequest) config.Decision {
-			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, UpstreamHost: "127.0.0.1:3080", Reason: "test"}
-		}},
-		HMACSecret: "secret",
-		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer srv.CloseIdleConnections()
-
-	proxyServer := httptest.NewServer(srv.Handler())
-	defer proxyServer.Close()
-	req, _ := http.NewRequest(http.MethodGet, proxyServer.URL+"/", nil)
-	req.Host = "dsh.example.com"
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	if got := <-hostSeen; got != "127.0.0.1:3080" {
-		t.Fatalf("upstream Host = %q, want loopback authority", got)
-	}
-}
-
 func TestAllowExternalProxyUsesUpstreamHostAndForwardsRequest(t *testing.T) {
 	type observedRequest struct {
 		host          string
@@ -1000,7 +963,7 @@ func TestProxyUsesDefaultFlushInterval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	proxy, err := srv.proxyFor("http://127.0.0.1:8080", "")
+	proxy, err := srv.proxyFor("http://127.0.0.1:8080")
 	if err != nil {
 		t.Fatal(err)
 	}
