@@ -81,7 +81,7 @@ journalctl -u picosrv.service -f
 
 ### 5. 可选：部署 fail2ban
 
-picosrv 日志在认证失败时包含 `"ban_candidate":true`。仅当请求确实携带了错误的基本认证凭据时才标记为候选；未携带凭据的请求（例如浏览器被动访问页面）不计数。安装 fail2ban 后，可部署相关规则：
+picosrv 日志会标记 `"ban_candidate":true`。安装 fail2ban 后，可部署相关规则：
 
 ```bash
 make deploy-fail2ban
