@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,6 +24,14 @@ func TestConsumeBasicAuth(t *testing.T) {
 			password:         "correct horse battery staple",
 			expectedUser:     "alice",
 			expectedPassword: "correct horse battery staple",
+			wantValid:        true,
+		},
+		{
+			name:             "valid with sha256 password",
+			user:             "alice",
+			password:         "correct horse battery staple",
+			expectedUser:     "alice",
+			expectedPassword: fmt.Sprintf("%x", sha256.Sum256([]byte("correct horse battery staple"))),
 			wantValid:        true,
 		},
 		{

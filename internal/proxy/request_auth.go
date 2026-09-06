@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"net/http"
 )
 
@@ -36,11 +37,21 @@ func (a *requestAuth) ConsumeBasicAuth(expectedUser, expectedPassword string) bo
 	passwordHash := sha256.Sum256([]byte(password))
 	expectedPasswordHash := sha256.Sum256([]byte(expectedPassword))
 	valid := subtle.ConstantTimeCompare(userHash[:], expectedUserHash[:]) &
-		subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:])
+		(passwordMatches(passwordHash[:], expectedPassword) | subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]))
 	if valid != 1 {
 		return false
 	}
 
 	a.request.Header.Del("Authorization")
 	return true
+}
+
+// passwordMatches reports whether passwordHash matches an expected SHA-256
+// digest encoded as hexadecimal. Invalid digest strings simply do not match.
+func passwordMatches(passwordHash []byte, expectedPassword string) int {
+	expectedHash, err := hex.DecodeString(expectedPassword)
+	if err != nil || len(expectedHash) != sha256.Size {
+		return 0
+	}
+	return subtle.ConstantTimeCompare(passwordHash, expectedHash)
 }
