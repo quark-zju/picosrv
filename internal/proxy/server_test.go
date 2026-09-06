@@ -741,6 +741,56 @@ func TestAllowProxyPreservesInboundHost(t *testing.T) {
 	}
 }
 
+func TestEvaluatorCanRewriteHostAndOrigin(t *testing.T) {
+	type observed struct {
+		host   string
+		origin string
+	}
+	seen := make(chan observed, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- observed{host: r.Host, origin: r.Header.Get("Origin")}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	srv, err := New(Options{
+		Evaluator: staticEvaluator{fn: func(req config.EvaluationRequest) config.Decision {
+			// Evaluators intentionally have access to the live request and may
+			// apply upstream-specific header compatibility rewrites.
+			req.HTTP.Host = "127.0.0.1:3080"
+			req.HTTP.Header.Set("Origin", "http://127.0.0.1:3080")
+			return config.Decision{Kind: config.DecisionAllowProxy, Upstream: upstream.URL, Reason: "test"}
+		}},
+		HMACSecret: "secret",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.CloseIdleConnections()
+
+	proxyServer := httptest.NewServer(srv.Handler())
+	defer proxyServer.Close()
+	req, _ := http.NewRequest(http.MethodGet, proxyServer.URL+"/", nil)
+	req.Host = "dsh.example.com"
+	req.Header.Set("Origin", "https://dsh.example.com")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	got := <-seen
+	if got.host != "127.0.0.1:3080" {
+		t.Fatalf("upstream Host = %q, want rewritten authority", got.host)
+	}
+	if got.origin != "http://127.0.0.1:3080" {
+		t.Fatalf("upstream Origin = %q, want rewritten origin", got.origin)
+	}
+}
+
 func TestAllowExternalProxyUsesUpstreamHostAndForwardsRequest(t *testing.T) {
 	type observedRequest struct {
 		host          string
