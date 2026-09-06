@@ -14,7 +14,7 @@ func TestConsumeBasicAuth(t *testing.T) {
 		user             string
 		password         string
 		expectedUser     string
-		expectedPassword string
+		expectedPassword any
 		wantValid        bool
 		wantHeader       bool
 	}{
@@ -31,7 +31,7 @@ func TestConsumeBasicAuth(t *testing.T) {
 			user:             "alice",
 			password:         "correct horse battery staple",
 			expectedUser:     "alice",
-			expectedPassword: fmt.Sprintf("%x", sha256.Sum256([]byte("correct horse battery staple"))),
+			expectedPassword: Sha256Encoded(fmt.Sprintf("%x", sha256.Sum256([]byte("correct horse battery staple")))),
 			wantValid:        true,
 		},
 		{

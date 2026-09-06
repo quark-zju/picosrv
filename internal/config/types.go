@@ -67,9 +67,10 @@ type RequestAuth interface {
 	HasValidCookie() bool
 
 	// ConsumeBasicAuth validates the request's HTTP Basic credentials against
-	// user and password. On success it removes the Authorization header so the
-	// credentials cannot be forwarded to an upstream handler.
-	ConsumeBasicAuth(user, password string) bool
+	// user and password. A string is treated as a plain password; implementations
+	// may provide an explicitly encoded password value. On success it removes
+	// the Authorization header so the credentials cannot be forwarded upstream.
+	ConsumeBasicAuth(user string, password any) bool
 }
 
 // EvaluationRequest contains the normalized request data and request-scoped
