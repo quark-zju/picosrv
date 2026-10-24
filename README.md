@@ -1,3 +1,6 @@
+> [!NOTE]
+> 项目移动到 [selfhost/picosrv](https://github.com/quark-zju/selfhost/tree/190853bcd6f67edb71d72904fb9efaeccc232d90/picosrv)
+
 # picosrv
 
 简单且经过思考的 HTTPS 反向代理服务
